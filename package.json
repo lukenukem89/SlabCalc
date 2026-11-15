@@ -9,7 +9,8 @@
     "vendor": "node scripts/vendor.js",
     "icon": "electron scripts/make-icon.js",
     "start": "npm run vendor && electron .",
-    "dist": "npm run vendor && npm run icon && electron-builder --mac --arm64"
+    "dist": "npm run vendor && npm run icon && electron-builder --mac --arm64",
+    "web": "sh scripts/publish-web.sh"
   },
   "build": {
     "appId": "com.slabcalc.app",
