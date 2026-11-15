@@ -668,7 +668,7 @@ function importBackup(file) {
    ========================================================= */
 function renderJob(job, tab) {
   const E = estimate(job);
-  const tabs = [['questions', '1 · Site questions'], ['map', '2 · Map & pours'], ['photo', '3 · Before / after'], ['proposal', '4 · Proposal']];
+  const tabs = [['questions', '1 · Site questions'], ['map', '2 · Map & pours'], ['photo', '3 · Before / after'], ['proposal', '4 · Proposal'], ['sub', '5 · Sub request']];
   $('#view').innerHTML = `
   <div class="jobhead noprint">
     <div style="flex:1;min-width:260px">
@@ -689,6 +689,7 @@ function renderJob(job, tab) {
   if (tab === 'map') renderMapTab(job);
   else if (tab === 'photo') renderPhotoTab(job);
   else if (tab === 'proposal') renderProposal(job);
+  else if (tab === 'sub') renderSubRequest(job);
   else renderQuestions(job);
 }
 function touch(job) { job.updated = Date.now(); save(); }
@@ -1518,6 +1519,133 @@ function projectTitle(job) {
   const w = kinds.map(k => n[k]);
   const t = w.length === 1 ? w[0] : w.slice(0, -1).join(', ') + ' & ' + w[w.length - 1];
   return 'New ' + t;
+}
+
+/* =========================================================
+   TAB 5: SUBCONTRACTOR QUOTE REQUEST (no customer prices or contact info)
+   ========================================================= */
+function subScopeItems(A, R) {
+  const tear = A.now === 'concrete' ? 'Break out and haul off old concrete' : A.now === 'asphalt' ? 'Remove and haul off asphalt' : A.now === 'grass' ? 'Strip sod and topsoil, haul off' : 'Regrade and reuse existing gravel';
+  return [
+    ['tear', tear],
+    ['dig', `Excavate to ${R.dig}″ and fine-grade (¼″/ft fall away from house)`],
+    ['base', `Supply, place and compact ${R.base}″ crushed-stone base` + (A.soil === 'soft' ? ' over geotextile fabric' : '')],
+    ['forms', 'Set and strip forms' + (A.slope === 'steep' ? ', incl. step-downs' : '')],
+    ['rebar', '#3 rebar grid @ 18″ o.c. on chairs' + (A.tie === 'garage' ? '; dowels into garage slab' : A.tie === 'city' ? '; expansion joint at city walk' : '')],
+    ['mix', 'Supply ready-mix (4,000 PSI air-entrained)'],
+    ['place', A.access === 'pump' ? 'Pump, place and finish' : A.access === 'buggy' ? 'Buggy, place and finish' : 'Place from chute and finish'],
+    ['joints', 'Cut control joints within 24 hours, per plan'],
+    ['cure', 'Curing compound'],
+    ['seal', 'Penetrating sealer at ~30 days'],
+    ['clean', 'Clean-up, haul off spoils and washout']
+  ];
+}
+function renderSubRequest(job) {
+  const P = S(), E = estimate(job), A = E.A, R = E.R;
+  const items = subScopeItems(A, R);
+  const sub = job.sub = Object.assign({ name: '', due: addDays(today(), 3), notes: '', scope: {} }, job.sub || {});
+  items.forEach(([k]) => { if (sub.scope[k] === undefined) sub.scope[k] = k !== 'seal'; });
+  const inc = items.filter(([k]) => sub.scope[k]), exc = items.filter(([k]) => !sub.scope[k]);
+  const letters = 'ABCDEFGHIJ';
+  const ans = k => { const q = QUESTIONS.find(q => q.k === k); const o = q && q.o.find(o => o[0] === A[k]); return o ? o[1] : ''; };
+  const F = E.pours.length ? frame(E.pours.flatMap(x => x.p.pts)) : null;
+  const jointLf = F ? E.pours.reduce((s, x) => s + x.m.joints.reduce((t, j) => { const a = F.toXY(j[0]), b = F.toXY(j[1]); return t + Math.hypot(a[0] - b[0], a[1] - b[1]); }, 0), 0) : 0;
+  const co = P.company ? esc(P.company) : '<span class="ph">[Your company]</span>';
+  const head = `<div class="runhead"><span>${co} · Quote request</span><span>${ph(job.address, 'Job address')}</span></div>`;
+  const foot = n => `<div class="foot"><span>${co} · ${ph(P.phone, 'Phone')}${P.email ? ' · ' + esc(P.email) : ''}</span><span>Page ${n} of 2</span></div>`;
+  const cell = 'border:1px solid #A8A49C;height:30px';
+
+  $('#tab').innerHTML = `
+  <div class="card noprint" style="margin-bottom:16px">
+    <div class="row">
+      <label class="f" style="min-width:240px">Subcontractor<input id="sname" value="${esc(sub.name)}" placeholder="Company or name"></label>
+      <label class="f">Quote needed by<input type="date" id="sdue" value="${esc(sub.due)}"></label>
+      <div style="margin-left:auto" class="row"><button class="btn primary" id="sprint" style="height:46px">Print / Save as PDF</button></div>
+    </div>
+    <div style="margin-top:12px"><div class="small muted" style="margin-bottom:6px">Their scope — tap to include or leave out. Anything left out is listed as “by us”.</div>
+      ${items.map(([k, n]) => `<button type="button" class="chip" aria-pressed="${!!sub.scope[k]}" data-sk="${k}">${n}</button>`).join('')}</div>
+    <label class="f" style="margin-top:8px">Notes for the sub<textarea id="snote" placeholder="Access, parking, timing, anything they should know…">${esc(sub.notes)}</textarea></label>
+    <div class="small muted" style="margin-top:6px">Your customer's name, phone and your prices are not on this sheet — only the address, plan and specs.</div>
+  </div>
+  ${E.pours.length ? '' : '<div class="card noprint" style="margin-bottom:16px">Outline at least one pour on the map to fill in the request.</div>'}
+  <div class="pages">
+  <section class="page"><div class="pad">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px">
+      <div><div class="kicker">REQUEST FOR QUOTE</div><h2>${esc(projectTitle(job))}</h2><div style="font-size:15px;margin-top:2px">${ph(job.address, 'Job address')}</div></div>
+      <div style="text-align:right;font-size:13px;line-height:1.5"><div class="disp" style="font-weight:700;font-size:16px">${co}</div>${[P.phone, P.email].filter(Boolean).map(esc).join('<br>')}<div style="color:#5B6068">${fmtDate(today())}</div></div>
+    </div>
+    <div style="display:flex;gap:14px;font-size:13.5px">
+      <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:10px 14px"><div style="color:#5B6068;font-size:12px">To</div><b>${sub.name ? esc(sub.name) : '<span class="ph">[Subcontractor]</span>'}</b></div>
+      <div style="flex:1;background:#FFF1E6;border:2px solid #C2560C;border-radius:10px;padding:10px 14px"><div style="color:#5B6068;font-size:12px">Please return your price by</div><b>${sub.due ? fmtDate(sub.due) : '<span class="ph">[date]</span>'}</b></div>
+      <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:10px 14px"><div style="color:#5B6068;font-size:12px">Total area</div><b>${num(E.area)} sq ft · ${num(E.net, 2)} yd³ net</b></div>
+    </div>
+    <figure style="margin:0"><figcaption style="font-size:12.5px;color:#5B6068;margin-bottom:6px">Site plan from satellite measurements. Dashed lines are control joints. Field-verify before pricing anything tight.</figcaption>${sitePlanSVG(E, 360)}</figure>
+    <table><thead><tr><th>AREA</th><th>SIZE</th><th class="r">SQ FT</th><th class="r">EDGE LF</th><th class="r">SLAB</th><th style="padding-left:22px">PANELS</th><th class="r">YD³ NET</th></tr></thead><tbody>
+      ${E.pours.map((x, i) => `<tr><td><b>${letters[i]}</b> ${esc(x.p.name)}</td><td>${num(x.m.L, 1)} × ${num(x.m.W, 1)} ft</td><td class="r">${num(x.m.area)}</td><td class="r">${num(x.m.perim)}</td><td class="r">${x.p.thick}″</td><td style="padding-left:22px">${x.m.rectish ? '' : '≈'}${x.m.nW * x.m.nL} panels @ ${num(x.m.pw, 1)} × ${num(x.m.pl, 1)} ft</td><td class="r">${num(x.m.yd, 2)}</td></tr>`).join('')}
+      <tr><td colspan="2" style="font-weight:700;border-bottom:none">Total</td><td class="r" style="font-weight:700;border-bottom:none">${num(E.area)}</td><td class="r" style="font-weight:700;border-bottom:none">${num(E.perim)}</td><td style="border-bottom:none"></td><td style="border-bottom:none;padding-left:22px">${num(jointLf)} lf of joints</td><td class="r" style="font-weight:700;border-bottom:none">${num(E.net, 2)}</td></tr>
+    </tbody></table>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px 18px;font-size:13px;line-height:1.35">
+      <div><span style="color:#5B6068">Existing:</span> <b>${ans('now')}</b></div>
+      <div><span style="color:#5B6068">Traffic:</span> <b>${ans('use')}</b></div>
+      <div><span style="color:#5B6068">Soil:</span> <b>${ans('soil')}</b></div>
+      <div><span style="color:#5B6068">Slope:</span> <b>${ans('slope')}</b></div>
+      <div><span style="color:#5B6068">Truck access:</span> <b>${ans('access')}</b></div>
+      <div><span style="color:#5B6068">Ties into:</span> <b>${ans('tie')}</b></div>
+      <div><span style="color:#5B6068">Base:</span> <b>${R.base}″ (≈${num(E.tons, 1)} tons)</b></div>
+      <div><span style="color:#5B6068">Dig depth:</span> <b>${R.dig}″</b></div>
+      <div><span style="color:#5B6068">Finish:</span> <b>${esc(E.fin.desc)}</b></div>
+    </div>
+    ${foot(1)}
+  </div></section>
+
+  <section class="page"><div class="pad">
+    ${head}
+    <div><div class="kicker">SCOPE &amp; YOUR PRICE</div><h2>What we need priced</h2></div>
+    <div style="background:#F4F3F0;border-radius:10px;padding:10px 14px;font-size:13px;line-height:1.5">
+      <b>Specs.</b> ${[...new Set(E.pours.map(x => x.p.thick + '″'))].join(' / ')} slab, 4,000 PSI air-entrained. Joints max ${num(Math.min(2.5 * Math.max(...E.pours.map(x => x.p.thick), 4), 15), 1)} ft, on the panel layout shown, cut ¼ of slab depth. ${esc(E.fin.desc)}${E.fin.id === 'broom' ? ', tooled edges' : ''}. No pour below 40°F forecast lows without approval.
+      <div style="margin-top:6px"><b>By us, not in your price.</b> ${[...exc.map(([, n]) => n), '811 locate and customer communication'].join(' · ')}.</div>
+      ${sub.notes ? `<div style="margin-top:6px"><b>Notes.</b> ${esc(sub.notes).replace(/\n/g, '<br>')}</div>` : ''}
+    </div>
+    <div><div class="disp" style="font-weight:700;font-size:16px;margin-bottom:6px">Your scope and price</div>
+    <table style="font-size:13.5px"><thead><tr><th>ITEM</th><th class="r" style="width:150px">PRICE</th></tr></thead><tbody>
+      ${inc.map(([, n]) => `<tr><td><span style="color:#2F8F5B;font-weight:700;margin-right:8px">✓</span>${n}</td><td style="${cell}"></td></tr>`).join('')}
+      <tr><td>Other / exclusions: ____________________________________________</td><td style="${cell}"></td></tr>
+      <tr><td style="font-weight:700;border-bottom:none">Total lump sum</td><td style="${cell};border-width:2px;border-color:#1C1F23"></td></tr>
+    </tbody></table></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;font-size:12.5px;color:#5B6068;margin-top:10px">
+      <div style="border-top:1px solid #1C1F23;padding-top:5px">Earliest start date</div>
+      <div style="border-top:1px solid #1C1F23;padding-top:5px">Days on site</div>
+      <div style="border-top:1px solid #1C1F23;padding-top:5px">Price good until</div>
+    </div>
+    <div style="display:flex;gap:40px;margin-top:24px;font-size:12.5px;color:#5B6068">
+      <div style="flex:1;border-top:1px solid #1C1F23;padding-top:5px">Subcontractor signature · date</div>
+      <div style="flex:1;border-top:1px solid #1C1F23;padding-top:5px">Phone / email</div>
+    </div>
+    ${foot(2)}
+  </div></section>
+  </div>`;
+
+  fitPages();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitPages);
+  hydrateSat($('#tab'));
+  document.querySelectorAll('[data-sk]').forEach(b => b.onclick = () => { sub.scope[b.dataset.sk] = !sub.scope[b.dataset.sk]; touch(job); renderSubRequest(job); });
+  $('#sname').onchange = e => { sub.name = e.target.value.trim(); touch(job); renderSubRequest(job); };
+  $('#sdue').onchange = e => { sub.due = e.target.value; touch(job); renderSubRequest(job); };
+  $('#snote').onchange = e => { sub.notes = e.target.value; touch(job); renderSubRequest(job); };
+  const app = window.slabcalc;
+  if (app && app.savePDF) $('#sprint').textContent = 'Save PDF';
+  $('#sprint').onclick = async () => {
+    const btn = $('#sprint'), label = btn.textContent; btn.disabled = true; btn.textContent = 'Preparing…';
+    await Promise.race([hydrateSat($('#tab')), new Promise(r => setTimeout(r, 8000))]);
+    btn.disabled = false; btn.textContent = label;
+    fitPages();
+    if (app && app.savePDF) {
+      const safe = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '').trim();
+      const r = await app.savePDF(`Quote request - ${safe(job.address).split(',')[0] || 'Job'}${sub.name ? ' - ' + safe(sub.name) : ''}.pdf`);
+      if (r && r.saved) toast('PDF saved');
+      else if (r && r.error) toast('Could not save the PDF: ' + r.error);
+    } else window.print();
+  };
 }
 
 /* =========================================================
