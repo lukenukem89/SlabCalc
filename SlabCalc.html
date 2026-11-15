@@ -492,23 +492,34 @@ function estimate(job, finishId) {
   const step = P.roundYard > 0 ? P.roundYard : 0.01;
   const order = net > 0 ? Math.ceil(withWaste / step - 1e-9) * step : 0;
   const lines = [];
-  const L = (label, detail, amt, mat) => { if (amt > 0.004) lines.push({ label, detail, amt, mat }); };
+  const L = (label, detail, amt, mat, cdetail) => { if (amt > 0.004) lines.push({ label, detail, amt, mat, cdetail }); };
   let tons = area * (R.base / 12) / 27 * 1.1 * 1.4;
   if (A.now === 'gravel') tons *= (1 - P.gravelReuse / 100);
   const fin = FINISHES.find(f => f.id === (finishId || job.finish || 'broom')) || FINISHES[0];
   if (P.pricingMode === 'sqft') {
     pours.forEach(x => {
       const t = x.p.thick || 4, r = sqftRate(P, t);
-      L(x.p.name, `${num(x.m.area)} sq ft × ${money(r, 2)} · ${t}″ installed`, x.m.area * r, false);
+      L(x.p.name, `${num(x.m.area)} sq ft × ${money(r, 2)} · ${t}″ installed`, x.m.area * r, false, `${num(x.m.area)} sq ft · ${t}″ · base, rebar and joints included`);
     });
-    if (A.now === 'concrete') L('Tear-out & haul-away', `${num(area)} sq ft of old concrete`, area * P.demoConcreteSqft, false);
-    if (A.now === 'asphalt') L('Asphalt removal & haul-away', `${num(area)} sq ft`, area * P.demoAsphaltSqft, false);
-    if (A.access === 'pump') L('Pump truck', '', P.pumpFee, false);
-    if (A.access === 'buggy') L('Buggy placement', `${num(area)} sq ft`, area * P.buggySqft, false);
-    if (P[fin.key] > 0) L(fin.desc + ' upgrade', `${num(area)} sq ft × ${money(P[fin.key], 2)}`, area * P[fin.key], false);
-    const sub = lines.reduce((s, l) => s + l.amt, 0);
-    const markup = sub * (P.sqftMarkupPct || 0) / 100;
-    return { A, R, pours, area, perim, net, order, tons, lines, sub, tax: 0, markup, total: Math.round(sub + markup), fin, trucks: Math.max(1, Math.ceil(order / 10)), simple: true };
+    if (A.now === 'concrete') L('Tear-out & haul-away', `${num(area)} sq ft of old concrete`, area * P.demoConcreteSqft, false, `${num(area)} sq ft of old concrete`);
+    if (A.now === 'asphalt') L('Asphalt removal & haul-away', `${num(area)} sq ft`, area * P.demoAsphaltSqft, false, `${num(area)} sq ft`);
+    if (A.access === 'pump') L('Pump truck', '', P.pumpFee, false, '');
+    if (A.access === 'buggy') L('Buggy placement', `${num(area)} sq ft`, area * P.buggySqft, false, '');
+    if (P[fin.key] > 0) L(fin.desc + ' upgrade', `${num(area)} sq ft × ${money(P[fin.key], 2)}`, area * P[fin.key], false, `${num(area)} sq ft`);
+    /* cost = the sub's quoted price once entered (adjusted for a different finish tier), else your per-sq-ft costs */
+    const est = lines.reduce((s, l) => s + l.amt, 0);
+    const upg = f => P[f.key] > 0 ? area * P[f.key] : 0;
+    const quoted = FINISHES.find(f => f.id === (job.finish || 'broom')) || FINISHES[0];
+    const subP = +job.subPrice || 0;
+    const cost = subP > 0 ? subP + upg(fin) - upg(quoted) : est;
+    const markup = cost * (P.sqftMarkupPct || 0) / 100;
+    const total = Math.round(cost + markup);
+    /* customer sees the same items with your markup built in (no rates, no markup line) */
+    const k = est > 0 ? total / est : 0;
+    const custLines = lines.map(l => ({ label: l.label, detail: l.cdetail != null ? l.cdetail : '', amt: Math.round(l.amt * k) }));
+    if (custLines.length) custLines[custLines.length - 1].amt += total - custLines.reduce((s, l) => s + l.amt, 0);
+    const costLines = subP > 0 ? [{ label: 'Subcontractor price', detail: (job.sub && job.sub.name ? job.sub.name + ' · ' : '') + 'turnkey' + (fin.id !== quoted.id ? ` · adjusted for ${fin.desc.toLowerCase()}` : ''), amt: cost }] : lines;
+    return { A, R, pours, area, perim, net, order, tons, lines: costLines, custLines, sub: cost, cost, profit: total - cost, tax: 0, markup, total, fin, trucks: Math.max(1, Math.ceil(order / 10)), simple: true };
   }
   L('Ready-mix concrete', `${num(order, 2)} yd³ × ${money(P.priceYard)}`, order * P.priceYard, true);
   if (order > 0 && order < P.shortLoadMin) L('Short-load fee', `order under ${P.shortLoadMin} yd³`, P.shortLoadFee, false);
@@ -680,7 +691,7 @@ function renderJob(job, tab) {
       <button class="btn" id="editc">Edit customer</button>
       <button class="btn" id="dupc" title="Start a new estimate from this one">Duplicate</button>
     </div>
-    <div class="card" style="padding:10px 14px;min-width:180px"><div class="eyebrow">Estimate</div><div class="big" id="hdr-total">${E.pours.length ? money(E.total) : '—'}</div></div>
+    <div class="card" style="padding:10px 14px;min-width:180px"><div class="eyebrow">Estimate</div><div class="big" id="hdr-total">${E.pours.length ? money(E.total) : '—'}</div><div class="small" id="hdr-profit">${profitNote(E)}</div></div>
   </div>
   <nav class="steps noprint" aria-label="Estimate steps">${tabs.map(([id, n]) => `<a href="#/job/${job.id}/${id}" class="${tab === id ? 'on' : ''}">${n}</a>`).join('')}</nav>
   <div id="tab"></div>`;
@@ -693,7 +704,12 @@ function renderJob(job, tab) {
   else renderQuestions(job);
 }
 function touch(job) { job.updated = Date.now(); save(); }
-function refreshHeaderTotal(job) { const el = $('#hdr-total'); if (el) { const E = estimate(job); el.textContent = E.pours.length ? money(E.total) : '—'; } }
+function refreshHeaderTotal(job) { const el = $('#hdr-total'); if (el) { const E = estimate(job); el.textContent = E.pours.length ? money(E.total) : '—'; const pn = $('#hdr-profit'); if (pn) pn.innerHTML = profitNote(E); } }
+function profitNote(E) {
+  if (!E.simple || !E.pours.length) return '';
+  if (!(S().sqftMarkupPct > 0)) return '<a href="#/settings" style="color:#B42318;font-weight:600">0% markup — no profit. Set it →</a>';
+  return `<span class="muted">Your profit ${money(E.profit)}</span>`;
+}
 
 /* =========================================================
    TAB 1: QUESTIONS
@@ -935,11 +951,11 @@ function renderMapTab(job) {
         </div>` : ''}
       </div>
       ${E.pours.length ? `<div class="card">
-        <div class="eyebrow" style="margin-bottom:4px">Cost breakdown</div>
+        <div class="eyebrow" style="margin-bottom:4px">${E.simple ? 'Your cost and price (not shown to the customer)' : 'Cost breakdown'}</div>
         <table class="lines">${E.lines.map(l => `<tr><td>${l.label}<div class="d">${l.detail}</div></td><td class="r">${money(l.amt)}</td></tr>`).join('')}
           ${E.tax > 0 ? `<tr><td>Sales tax<div class="d">${S().taxPct}% on materials</div></td><td class="r">${money(E.tax)}</td></tr>` : ''}
-          ${E.markup > 0 ? `<tr><td>Overhead &amp; profit<div class="d">${E.simple ? S().sqftMarkupPct : S().markupPct}% markup</div></td><td class="r">${money(E.markup)}</td></tr>` : ''}
-          <tr><td><b>Total</b></td><td class="r"><b>${money(E.total)}</b></td></tr></table>
+          ${E.markup > 0 ? `<tr><td>${E.simple ? 'Your markup' : 'Overhead &amp; profit'}<div class="d">${E.simple ? S().sqftMarkupPct : S().markupPct}%${E.simple ? ' · built into the customer’s prices' : ' markup'}</div></td><td class="r">${money(E.markup)}</td></tr>` : ''}
+          <tr><td><b>${E.simple ? 'Customer price' : 'Total'}</b></td><td class="r"><b>${money(E.total)}</b></td></tr></table>
         <div class="small muted" style="margin-top:6px">Unit prices come from <a href="#/settings">Prices &amp; company</a>.</div>
         <a class="btn primary" style="width:100%;justify-content:center;margin-top:12px;height:46px" href="#/job/${job.id}/photo">Next: before / after →</a>
       </div>` : ''}`;
@@ -1421,8 +1437,8 @@ function renderProposal(job) {
     ${head}
     <div><div class="kicker">04 · PRICE</div><h2>Everything you get</h2></div>
     <table><thead><tr><th>INCLUDED</th><th class="r">PRICE</th></tr></thead><tbody>
-      ${E.lines.map(l => `<tr><td>${l.label}${l.detail ? ` <span style="color:#5B6068;font-size:12.5px">· ${l.detail}</span>` : ''}</td><td class="r">${money(l.amt)}</td></tr>`).join('')}
-      ${E.tax + E.markup > 0.5 ? `<tr><td>${E.simple ? 'Overhead &amp; profit' : 'Sales tax on materials · overhead &amp; profit'}</td><td class="r">${money(E.tax + E.markup)}</td></tr>` : ''}
+      ${(E.custLines || E.lines).map(l => `<tr><td>${l.label}${l.detail ? ` <span style="color:#5B6068;font-size:12.5px">· ${l.detail}</span>` : ''}</td><td class="r">${money(l.amt)}</td></tr>`).join('')}
+      ${!E.simple && E.tax + E.markup > 0.5 ? `<tr><td>${E.simple ? 'Overhead &amp; profit' : 'Sales tax on materials · overhead &amp; profit'}</td><td class="r">${money(E.tax + E.markup)}</td></tr>` : ''}
       <tr><td style="font-weight:700;font-size:17px;border-bottom:none">Your price</td><td class="r" style="font-weight:700;font-size:17px;border-bottom:none">${money(E.total)}</td></tr>
     </tbody></table>
     ${bonusRows ? `<div style="border:2px dashed #C2560C;border-radius:12px;padding:12px 16px;background:#FFF8F2"><div class="disp" style="font-weight:700;font-size:17px">Included free when you sign by ${fmtDate(job.signBy || addDays(job.proposalDate || today(), 7))}</div><div style="display:flex;flex-direction:column;gap:3px;font-size:13.5px;margin-top:6px">${bonusRows}</div></div>` : ''}
@@ -1526,27 +1542,27 @@ function projectTitle(job) {
    TAB 5: SUBCONTRACTOR QUOTE REQUEST (no customer prices or contact info)
    ========================================================= */
 function subScopeItems(A, R) {
-  const tear = A.now === 'concrete' ? 'Break out and haul off old concrete' : A.now === 'asphalt' ? 'Remove and haul off asphalt' : A.now === 'grass' ? 'Strip sod and topsoil, haul off' : 'Regrade and reuse existing gravel';
+  const tear = A.now === 'concrete' ? 'old concrete out and hauled' : A.now === 'asphalt' ? 'asphalt out and hauled' : A.now === 'grass' ? 'sod and topsoil stripped and hauled' : 'existing gravel regraded and reused';
   return [
+    ['locate', '811 locates'],
     ['tear', tear],
-    ['dig', `Excavate to ${R.dig}″ and fine-grade (¼″/ft fall away from house)`],
-    ['base', `Supply, place and compact ${R.base}″ crushed-stone base` + (A.soil === 'soft' ? ' over geotextile fabric' : '')],
-    ['forms', 'Set and strip forms' + (A.slope === 'steep' ? ', incl. step-downs' : '')],
-    ['rebar', '#3 rebar grid @ 18″ o.c. on chairs' + (A.tie === 'garage' ? '; dowels into garage slab' : A.tie === 'city' ? '; expansion joint at city walk' : '')],
-    ['mix', 'Supply ready-mix (4,000 PSI air-entrained)'],
-    ['place', A.access === 'pump' ? 'Pump, place and finish' : A.access === 'buggy' ? 'Buggy, place and finish' : 'Place from chute and finish'],
-    ['joints', 'Cut control joints within 24 hours, per plan'],
-    ['cure', 'Curing compound'],
-    ['seal', 'Penetrating sealer at ~30 days'],
-    ['clean', 'Clean-up, haul off spoils and washout']
+    ['dig', `dig to ${R.dig}″ and grade (¼″/ft fall)`],
+    ['base', `${R.base}″ compacted stone base` + (A.soil === 'soft' ? ' on fabric' : '')],
+    ['forms', 'forms' + (A.slope === 'steep' ? ' and step-downs' : '')],
+    ['rebar', '#3 rebar @ 18″ on chairs' + (A.tie === 'garage' ? ', dowels into garage' : A.tie === 'city' ? ', expansion joint at city walk' : '')],
+    ['mix', '4,000 PSI air-entrained concrete'],
+    ['place', A.access === 'pump' ? 'pump, place and finish' : A.access === 'buggy' ? 'buggy, place and finish' : 'place and finish'],
+    ['joints', 'joints cut within 24 h'],
+    ['seal', 'cure and seal (required)'],
+    ['clean', 'clean-up, haul-off, grass edges restored'],
+    ['permit', 'permits, equipment and labor']
   ];
 }
 function renderSubRequest(job) {
   const P = S(), E = estimate(job), A = E.A, R = E.R;
   const items = subScopeItems(A, R);
-  const sub = job.sub = Object.assign({ name: '', due: addDays(today(), 3), notes: '', scope: {} }, job.sub || {});
-  items.forEach(([k]) => { if (sub.scope[k] === undefined) sub.scope[k] = k !== 'seal'; });
-  const inc = items.filter(([k]) => sub.scope[k]), exc = items.filter(([k]) => !sub.scope[k]);
+  const sub = job.sub = Object.assign({ name: '', due: addDays(today(), 3), notes: '' }, job.sub || {});
+  const completion = job.completionDate || (job.startDate ? addWorkDays(job.startDate, P.workDays) : '');
   const letters = 'ABCDEFGHIJ';
   const ans = k => { const q = QUESTIONS.find(q => q.k === k); const o = q && q.o.find(o => o[0] === A[k]); return o ? o[1] : ''; };
   const F = E.pours.length ? frame(E.pours.flatMap(x => x.p.pts)) : null;
@@ -1561,8 +1577,11 @@ function renderSubRequest(job) {
       <label class="f">Quote needed by<input type="date" id="sdue" value="${esc(sub.due)}"></label>
       <div style="margin-left:auto" class="row"><button class="btn primary" id="sprint" style="height:46px">Print / Save as PDF</button></div>
     </div>
-    <div style="margin-top:12px"><div class="small muted" style="margin-bottom:6px">What their one price should cover — tap to leave something out (it's listed as “by us”).</div>
-      ${items.map(([k, n]) => `<button type="button" class="chip" aria-pressed="${!!sub.scope[k]}" data-sk="${k}">${n}</button>`).join('')}</div>
+    <div class="row" style="margin-top:12px;align-items:flex-end">
+      <label class="f">Sub's price (when it comes back)<input type="number" min="0" step="any" id="sprice" value="${job.subPrice || ''}" placeholder="$"></label>
+      <div class="small" style="padding-bottom:10px">${E.pours.length ? `Customer price <b>${money(E.total)}</b> · your profit <b>${money(E.profit)}</b> (${S().sqftMarkupPct || 0}% markup)${job.subPrice ? '' : ' — estimated from your per-sq-ft costs until you enter their price'}` : ''}</div>
+    </div>
+    <div class="small muted" style="margin-top:6px">The sub prices the whole job, sealer included — nothing is left “by us”.</div>
     <label class="f" style="margin-top:8px">Notes for the sub<textarea id="snote" placeholder="Access, parking, timing, anything they should know…">${esc(sub.notes)}</textarea></label>
     <div class="small muted" style="margin-top:6px">Your customer's name, phone and your prices are not on this sheet — only the address, plan and specs.</div>
   </div>
@@ -1578,27 +1597,21 @@ function renderSubRequest(job) {
       <div style="flex:1;background:#FFF1E6;border:2px solid #C2560C;border-radius:10px;padding:10px 14px"><div style="color:#5B6068;font-size:12px">Please return your price by</div><b>${sub.due ? fmtDate(sub.due) : '<span class="ph">[date]</span>'}</b></div>
       <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:10px 14px"><div style="color:#5B6068;font-size:12px">Total area</div><b>${num(E.area)} sq ft · ${num(E.net, 2)} yd³ net</b></div>
     </div>
-    <figure style="margin:0"><figcaption style="font-size:12.5px;color:#5B6068;margin-bottom:6px">Site plan from satellite measurements. Dashed lines are control joints. Field-verify before pricing anything tight.</figcaption>${sitePlanSVG(E, 250)}</figure>
+    <figure style="margin:0"><figcaption style="font-size:12.5px;color:#5B6068;margin-bottom:6px">Site plan from satellite measurements. Dashed lines are control joints. Field-verify before pricing.</figcaption>${sitePlanSVG(E, 220)}</figure>
     <table><thead><tr><th>AREA</th><th>SIZE</th><th class="r">SQ FT</th><th class="r">EDGE LF</th><th class="r">SLAB</th><th style="padding-left:22px">PANELS</th><th class="r">YD³ NET</th></tr></thead><tbody>
       ${E.pours.map((x, i) => `<tr><td><b>${letters[i]}</b> ${esc(x.p.name)}</td><td>${num(x.m.L, 1)} × ${num(x.m.W, 1)} ft</td><td class="r">${num(x.m.area)}</td><td class="r">${num(x.m.perim)}</td><td class="r">${x.p.thick}″</td><td style="padding-left:22px">${x.m.rectish ? '' : '≈'}${x.m.nW * x.m.nL} panels @ ${num(x.m.pw, 1)} × ${num(x.m.pl, 1)} ft</td><td class="r">${num(x.m.yd, 2)}</td></tr>`).join('')}
       <tr><td colspan="2" style="font-weight:700;border-bottom:none">Total</td><td class="r" style="font-weight:700;border-bottom:none">${num(E.area)}</td><td class="r" style="font-weight:700;border-bottom:none">${num(E.perim)}</td><td style="border-bottom:none"></td><td style="border-bottom:none;padding-left:22px">${num(jointLf)} lf of joints</td><td class="r" style="font-weight:700;border-bottom:none">${num(E.net, 2)}</td></tr>
     </tbody></table>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px 18px;font-size:13px;line-height:1.35">
-      <div><span style="color:#5B6068">Existing:</span> <b>${ans('now')}</b></div>
-      <div><span style="color:#5B6068">Traffic:</span> <b>${ans('use')}</b></div>
-      <div><span style="color:#5B6068">Soil:</span> <b>${ans('soil')}</b></div>
-      <div><span style="color:#5B6068">Slope:</span> <b>${ans('slope')}</b></div>
-      <div><span style="color:#5B6068">Truck access:</span> <b>${ans('access')}</b></div>
-      <div><span style="color:#5B6068">Ties into:</span> <b>${ans('tie')}</b></div>
-      <div><span style="color:#5B6068">Base:</span> <b>${R.base}″ (≈${num(E.tons, 1)} tons)</b></div>
-      <div><span style="color:#5B6068">Dig depth:</span> <b>${R.dig}″</b></div>
-      <div><span style="color:#5B6068">Finish:</span> <b>${esc(E.fin.desc)}</b></div>
-    </div>
+    <div style="font-size:13px;line-height:1.45"><b>Site:</b> now ${ans('now').toLowerCase()} · ${ans('use')} · soil ${ans('soil').toLowerCase()} · ${ans('slope').toLowerCase()} · truck access: ${ans('access').toLowerCase()} · ties into: ${ans('tie').toLowerCase()} · ${R.base}″ base (≈${num(E.tons, 1)} tons) · dig ${R.dig}″ · ${esc(E.fin.desc.toLowerCase())}</div>
     <div style="background:#F4F3F0;border-radius:10px;padding:10px 14px;font-size:13px;line-height:1.5">
-      <div><b>Price to include:</b> ${inc.map(([, n]) => n).join('; ') || '—'}.</div>
-      ${exc.length ? `<div style="margin-top:4px"><b>Not in your price (by us):</b> ${exc.map(([, n]) => n).join('; ')}.</div>` : ''}
-      <div style="margin-top:4px"><b>Specs:</b> 4,000 PSI air-entrained, joints on the layout shown and cut within 24 hours. No pour below 40°F forecast lows without approval.</div>
+      <div><b>Turnkey — your price covers everything:</b> ${items.map(([, n]) => n).join(' · ')}.</div>
+      <div style="margin-top:4px">Joints on the layout shown. No pour below 40°F forecast lows without our OK.</div>
       ${sub.notes ? `<div style="margin-top:4px"><b>Notes:</b> ${esc(sub.notes).replace(/\n/g, '<br>')}</div>` : ''}
+    </div>
+    <div style="border:1px solid #A8A49C;border-radius:10px;padding:10px 14px;font-size:13px;line-height:1.5">
+      <div class="disp" style="font-weight:700;font-size:15px;margin-bottom:2px">To get this job</div>
+      <div>• <b>Done by ${completion ? fmtDate(completion) : 'the agreed date'}</b> (weather days added). Our customer has an on-time guarantee; late days in your control are backcharged.</div>
+      <div>• <b>${P.warrantyYears}-year workmanship warranty</b> to us · <b>insurance certificate</b> (liability + workers' comp) naming ${co} before start · <b>signed lien waiver</b> with every payment.</div>
     </div>
     <div style="display:flex;gap:18px;align-items:flex-end">
       <div style="flex:1.2;border:2px solid #1C1F23;border-radius:10px;padding:10px 14px"><div class="disp" style="font-weight:700;font-size:16px">Your price, total</div><div style="font-size:26px;font-weight:700;margin-top:14px">$ ____________________</div></div>
@@ -1615,7 +1628,7 @@ function renderSubRequest(job) {
   fitPages();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitPages);
   hydrateSat($('#tab'));
-  document.querySelectorAll('[data-sk]').forEach(b => b.onclick = () => { sub.scope[b.dataset.sk] = !sub.scope[b.dataset.sk]; touch(job); renderSubRequest(job); });
+  $('#sprice').onchange = e => { job.subPrice = Math.max(0, parseFloat(e.target.value) || 0); touch(job); refreshHeaderTotal(job); renderSubRequest(job); };
   $('#sname').onchange = e => { sub.name = e.target.value.trim(); touch(job); renderSubRequest(job); };
   $('#sdue').onchange = e => { sub.due = e.target.value; touch(job); renderSubRequest(job); };
   $('#snote').onchange = e => { sub.notes = e.target.value; touch(job); renderSubRequest(job); };
@@ -1653,8 +1666,8 @@ function renderSettings() {
         <button class="btn" style="flex:1;justify-content:center" data-mode="sqft" aria-pressed="${simple}">Price per sq ft</button>
         <button class="btn" style="flex:1;justify-content:center" data-mode="itemized" aria-pressed="${!simple}">Itemized costs</button>
       </div>
-      ${simple ? `<div class="grid2">${f('sqft4', '4″ slab $ / sq ft')}${f('sqft5', '5″ slab $ / sq ft')}${f('sqft6', '6″ slab $ / sq ft')}${f('sqft8', '8″ slab $ / sq ft')}${f('sqftMarkupPct', 'Markup on top %')}</div>
-      <div class="small muted" style="margin-top:8px">Installed price: concrete, base, forms, rebar, labor and broom finish. Removal, pump / buggy and finish upgrades are added on top. Leave markup at 0 if these are your selling prices.</div>`
+      ${simple ? `<div class="grid2">${f('sqft4', '4″ slab · your cost $ / sq ft')}${f('sqft5', '5″ slab · your cost $ / sq ft')}${f('sqft6', '6″ slab · your cost $ / sq ft')}${f('sqft8', '8″ slab · your cost $ / sq ft')}${f('sqftMarkupPct', 'Your markup %')}</div>
+      <div class="small muted" style="margin-top:8px">Your cost = what your sub charges, turnkey (dig, base, forms, rebar, concrete, finish, joints, sealer). Removal, pump / buggy and finish upgrades are added on top. Once a sub sends their price, enter it on the job's Sub request tab and it replaces this estimate. Your markup is built into the customer's prices; it never shows as its own line.</div>`
       : `<div class="small muted">Every material and labor item is priced separately, then tax and markup are added.</div>`}
     </div>
     <div class="card"><h3 style="margin-top:0">${simple ? 'Extras (added on top)' : 'Concrete'}</h3><div class="grid2">${simple ? f('demoConcreteSqft', 'Concrete tear-out $ / sq ft') + f('demoAsphaltSqft', 'Asphalt removal $ / sq ft') + f('pumpFee', 'Pump truck $') + f('buggySqft', 'Buggy placement $ / sq ft') : f('priceYard', 'Ready-mix $ / yd³') + f('waste', 'Waste / overage %') + f('roundYard', 'Round order up to (yd³)') + f('shortLoadMin', 'Short load under (yd³)') + f('shortLoadFee', 'Short-load fee $') + f('pumpFee', 'Pump truck $') + f('buggySqft', 'Buggy placement $ / sq ft')}</div></div>
