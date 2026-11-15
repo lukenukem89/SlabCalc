@@ -166,6 +166,8 @@ const DEFAULT_SETTINGS = {
   gravelTon: 38, gravelReuse: 50, fabricSqft: 0.35,
   rebarSqft: 0.85, dowelFlat: 150, formsLf: 1.75, laborSqft: 4.50,
   taxPct: 7, markupPct: 15,
+  /* simple pricing: installed price per sq ft by slab thickness (removal, pump/buggy and finish upgrades extra) */
+  pricingMode: 'sqft', sqft4: 12, sqft5: 14, sqft6: 16, sqft8: 20, sqftMarkupPct: 0,
   fin_broom: 0, fin_charcoal: 1.25, fin_aggregate: 3.50, fin_stamped: 6.00,
   guaranteePct: 20, warrantyYears: 2, dep1: 30, dep2: 40, dep3: 30, validDays: 30, workDays: 3,
   bonuses: [
@@ -491,6 +493,23 @@ function estimate(job, finishId) {
   const order = net > 0 ? Math.ceil(withWaste / step - 1e-9) * step : 0;
   const lines = [];
   const L = (label, detail, amt, mat) => { if (amt > 0.004) lines.push({ label, detail, amt, mat }); };
+  let tons = area * (R.base / 12) / 27 * 1.1 * 1.4;
+  if (A.now === 'gravel') tons *= (1 - P.gravelReuse / 100);
+  const fin = FINISHES.find(f => f.id === (finishId || job.finish || 'broom')) || FINISHES[0];
+  if (P.pricingMode === 'sqft') {
+    pours.forEach(x => {
+      const t = x.p.thick || 4, r = sqftRate(P, t);
+      L(x.p.name, `${num(x.m.area)} sq ft × ${money(r, 2)} · ${t}″ installed`, x.m.area * r, false);
+    });
+    if (A.now === 'concrete') L('Tear-out & haul-away', `${num(area)} sq ft of old concrete`, area * P.demoConcreteSqft, false);
+    if (A.now === 'asphalt') L('Asphalt removal & haul-away', `${num(area)} sq ft`, area * P.demoAsphaltSqft, false);
+    if (A.access === 'pump') L('Pump truck', '', P.pumpFee, false);
+    if (A.access === 'buggy') L('Buggy placement', `${num(area)} sq ft`, area * P.buggySqft, false);
+    if (P[fin.key] > 0) L(fin.desc + ' upgrade', `${num(area)} sq ft × ${money(P[fin.key], 2)}`, area * P[fin.key], false);
+    const sub = lines.reduce((s, l) => s + l.amt, 0);
+    const markup = sub * (P.sqftMarkupPct || 0) / 100;
+    return { A, R, pours, area, perim, net, order, tons, lines, sub, tax: 0, markup, total: Math.round(sub + markup), fin, trucks: Math.max(1, Math.ceil(order / 10)), simple: true };
+  }
   L('Ready-mix concrete', `${num(order, 2)} yd³ × ${money(P.priceYard)}`, order * P.priceYard, true);
   if (order > 0 && order < P.shortLoadMin) L('Short-load fee', `order under ${P.shortLoadMin} yd³`, P.shortLoadFee, false);
   if (A.access === 'pump') L('Pump truck', '', P.pumpFee, false);
@@ -498,15 +517,12 @@ function estimate(job, finishId) {
   if (A.now === 'concrete') L('Tear-out & haul-away', `${num(area)} sq ft of old concrete`, area * P.demoConcreteSqft, false);
   if (A.now === 'asphalt') L('Asphalt removal & haul-away', `${num(area)} sq ft`, area * P.demoAsphaltSqft, false);
   if (A.now === 'grass') L('Strip sod & topsoil', `${num(area)} sq ft`, area * P.sodSqft, false);
-  let tons = area * (R.base / 12) / 27 * 1.1 * 1.4;
-  if (A.now === 'gravel') tons *= (1 - P.gravelReuse / 100);
   L('Gravel base', `${num(tons, 1)} tons, ${R.base}″ compacted` + (A.now === 'gravel' ? ' (reusing existing)' : ''), tons * P.gravelTon, true);
   if (A.soil === 'soft') L('Geotextile fabric', `${num(area)} sq ft`, area * P.fabricSqft, true);
   L('Rebar grid', `${num(area)} sq ft, #3 @ 18″`, area * P.rebarSqft, true);
   if (A.tie === 'garage') L('Tie-in dowels', 'drilled into garage slab', P.dowelFlat, true);
   L('Forms', `${num(perim)} linear ft of edge`, perim * P.formsLf, true);
   L('Labor', `${num(area)} sq ft × ${money(P.laborSqft, 2)}`, area * P.laborSqft, false);
-  const fin = FINISHES.find(f => f.id === (finishId || job.finish || 'broom')) || FINISHES[0];
   if (P[fin.key] > 0) L(fin.desc + ' upgrade', `${num(area)} sq ft × ${money(P[fin.key], 2)}`, area * P[fin.key], false);
   const sub = lines.reduce((s, l) => s + l.amt, 0);
   const mat = lines.filter(l => l.mat).reduce((s, l) => s + l.amt, 0);
@@ -514,6 +530,13 @@ function estimate(job, finishId) {
   const markup = (sub + tax) * P.markupPct / 100;
   const total = Math.round(sub + tax + markup);
   return { A, R, pours, area, perim, net, order, tons, lines, sub, tax, markup, total, fin, trucks: Math.max(1, Math.ceil(order / 10)) };
+}
+/* installed $/sq ft for a thickness; thicknesses without a rate extend the 5″→6″ step */
+function sqftRate(P, t) {
+  const v = P['sqft' + t];
+  if (v > 0) return v;
+  const step = (P.sqft6 || 0) - (P.sqft5 || 0);
+  return (P.sqft6 || 0) + (t - 6) * step;
 }
 function tiers(job) { return FINISHES.map(f => ({ f, total: estimate(job, f.id).total })); }
 
@@ -906,8 +929,8 @@ function renderMapTab(job) {
       ${E.pours.length ? `<div class="card">
         <div class="eyebrow" style="margin-bottom:4px">Cost breakdown</div>
         <table class="lines">${E.lines.map(l => `<tr><td>${l.label}<div class="d">${l.detail}</div></td><td class="r">${money(l.amt)}</td></tr>`).join('')}
-          <tr><td>Sales tax<div class="d">${S().taxPct}% on materials</div></td><td class="r">${money(E.tax)}</td></tr>
-          <tr><td>Overhead &amp; profit<div class="d">${S().markupPct}% markup</div></td><td class="r">${money(E.markup)}</td></tr>
+          ${E.tax > 0 ? `<tr><td>Sales tax<div class="d">${S().taxPct}% on materials</div></td><td class="r">${money(E.tax)}</td></tr>` : ''}
+          ${E.markup > 0 ? `<tr><td>Overhead &amp; profit<div class="d">${E.simple ? S().sqftMarkupPct : S().markupPct}% markup</div></td><td class="r">${money(E.markup)}</td></tr>` : ''}
           <tr><td><b>Total</b></td><td class="r"><b>${money(E.total)}</b></td></tr></table>
         <div class="small muted" style="margin-top:6px">Unit prices come from <a href="#/settings">Prices &amp; company</a>.</div>
         <a class="btn primary" style="width:100%;justify-content:center;margin-top:12px;height:46px" href="#/job/${job.id}/photo">Next: before / after →</a>
@@ -1333,7 +1356,7 @@ function renderProposal(job) {
     <div><div class="kicker">04 · PRICE</div><h2>Everything you get</h2></div>
     <table><thead><tr><th>INCLUDED</th><th class="r">PRICE</th></tr></thead><tbody>
       ${E.lines.map(l => `<tr><td>${l.label}${l.detail ? ` <span style="color:#5B6068;font-size:12.5px">· ${l.detail}</span>` : ''}</td><td class="r">${money(l.amt)}</td></tr>`).join('')}
-      <tr><td>Sales tax on materials · overhead &amp; profit</td><td class="r">${money(E.tax + E.markup)}</td></tr>
+      ${E.tax + E.markup > 0.5 ? `<tr><td>${E.simple ? 'Overhead &amp; profit' : 'Sales tax on materials · overhead &amp; profit'}</td><td class="r">${money(E.tax + E.markup)}</td></tr>` : ''}
       <tr><td style="font-weight:700;font-size:17px;border-bottom:none">Your price</td><td class="r" style="font-weight:700;font-size:17px;border-bottom:none">${money(E.total)}</td></tr>
     </tbody></table>
     ${bonusRows ? `<div style="border:2px dashed #C2560C;border-radius:12px;padding:12px 16px;background:#FFF8F2"><div class="disp" style="font-weight:700;font-size:17px">Included free when you sign by ${fmtDate(job.signBy || addDays(job.proposalDate || today(), 7))}</div><div style="display:flex;flex-direction:column;gap:3px;font-size:13.5px;margin-top:6px">${bonusRows}</div></div>` : ''}
@@ -1433,6 +1456,7 @@ function projectTitle(job) {
    ========================================================= */
 function renderSettings() {
   const P = S();
+  const simple = P.pricingMode === 'sqft';
   const f = (k, label, step) => `<label class="f">${label}<input type="number" step="${step || 'any'}" min="0" data-k="${k}" value="${P[k]}"></label>`;
   const t = (k, label, ph) => `<label class="f">${label}<input type="text" data-k="${k}" value="${esc(P[k])}" placeholder="${ph || ''}"></label>`;
   $('#view').innerHTML = `
@@ -1440,17 +1464,27 @@ function renderSettings() {
   <p class="muted" style="margin:0 0 16px">Set these once. Every estimate and proposal uses them. Changes save automatically.</p>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px">
     <div class="card"><h3 style="margin-top:0">Company</h3><div style="display:grid;gap:10px">${t('company', 'Company name')}${t('phone', 'Phone')}${t('email', 'Email')}${t('license', 'License #')}</div></div>
-    <div class="card"><h3 style="margin-top:0">Concrete</h3><div class="grid2">${f('priceYard', 'Ready-mix $ / yd³')}${f('waste', 'Waste / overage %')}${f('roundYard', 'Round order up to (yd³)')}${f('shortLoadMin', 'Short load under (yd³)')}${f('shortLoadFee', 'Short-load fee $')}${f('pumpFee', 'Pump truck $')}${f('buggySqft', 'Buggy placement $ / sq ft')}</div></div>
-    <div class="card"><h3 style="margin-top:0">Site prep &amp; base</h3><div class="grid2">${f('demoConcreteSqft', 'Concrete tear-out $ / sq ft')}${f('demoAsphaltSqft', 'Asphalt removal $ / sq ft')}${f('sodSqft', 'Strip sod $ / sq ft')}${f('gravelTon', 'Gravel $ / ton')}${f('gravelReuse', 'Gravel saved when reusing %')}${f('fabricSqft', 'Geotextile $ / sq ft')}</div></div>
-    <div class="card"><h3 style="margin-top:0">Steel, forms &amp; labor</h3><div class="grid2">${f('rebarSqft', 'Rebar $ / sq ft')}${f('dowelFlat', 'Garage tie-in dowels $')}${f('formsLf', 'Forms $ / linear ft')}${f('laborSqft', 'Labor $ / sq ft')}${f('taxPct', 'Sales tax % (materials)')}${f('markupPct', 'Overhead & profit %')}</div></div>
+    <div class="card" style="border:2px solid var(--accent)"><h3 style="margin-top:0">How you price</h3>
+      <div class="row" role="group" aria-label="Pricing method" style="margin-bottom:12px">
+        <button class="btn" style="flex:1;justify-content:center" data-mode="sqft" aria-pressed="${simple}">Price per sq ft</button>
+        <button class="btn" style="flex:1;justify-content:center" data-mode="itemized" aria-pressed="${!simple}">Itemized costs</button>
+      </div>
+      ${simple ? `<div class="grid2">${f('sqft4', '4″ slab $ / sq ft')}${f('sqft5', '5″ slab $ / sq ft')}${f('sqft6', '6″ slab $ / sq ft')}${f('sqft8', '8″ slab $ / sq ft')}${f('sqftMarkupPct', 'Markup on top %')}</div>
+      <div class="small muted" style="margin-top:8px">Installed price: concrete, base, forms, rebar, labor and broom finish. Removal, pump / buggy and finish upgrades are added on top. Leave markup at 0 if these are your selling prices.</div>`
+      : `<div class="small muted">Every material and labor item is priced separately, then tax and markup are added.</div>`}
+    </div>
+    <div class="card"><h3 style="margin-top:0">${simple ? 'Extras (added on top)' : 'Concrete'}</h3><div class="grid2">${simple ? f('demoConcreteSqft', 'Concrete tear-out $ / sq ft') + f('demoAsphaltSqft', 'Asphalt removal $ / sq ft') + f('pumpFee', 'Pump truck $') + f('buggySqft', 'Buggy placement $ / sq ft') : f('priceYard', 'Ready-mix $ / yd³') + f('waste', 'Waste / overage %') + f('roundYard', 'Round order up to (yd³)') + f('shortLoadMin', 'Short load under (yd³)') + f('shortLoadFee', 'Short-load fee $') + f('pumpFee', 'Pump truck $') + f('buggySqft', 'Buggy placement $ / sq ft')}</div></div>
+    ${simple ? '' : `<div class="card"><h3 style="margin-top:0">Site prep &amp; base</h3><div class="grid2">${f('demoConcreteSqft', 'Concrete tear-out $ / sq ft')}${f('demoAsphaltSqft', 'Asphalt removal $ / sq ft')}${f('sodSqft', 'Strip sod $ / sq ft')}${f('gravelTon', 'Gravel $ / ton')}${f('gravelReuse', 'Gravel saved when reusing %')}${f('fabricSqft', 'Geotextile $ / sq ft')}</div></div>
+    <div class="card"><h3 style="margin-top:0">Steel, forms &amp; labor</h3><div class="grid2">${f('rebarSqft', 'Rebar $ / sq ft')}${f('dowelFlat', 'Garage tie-in dowels $')}${f('formsLf', 'Forms $ / linear ft')}${f('laborSqft', 'Labor $ / sq ft')}${f('taxPct', 'Sales tax % (materials)')}${f('markupPct', 'Overhead & profit %')}</div></div>`}
     <div class="card"><h3 style="margin-top:0">Finish upgrades ($ / sq ft)</h3><div class="grid2">${f('fin_broom', 'Broom (standard)')}${f('fin_charcoal', 'Charcoal tint')}${f('fin_aggregate', 'Exposed aggregate')}${f('fin_stamped', 'Stamped')}</div></div>
     <div class="card"><h3 style="margin-top:0">Guarantee &amp; terms</h3><div class="grid2">${f('guaranteePct', 'On-time refund %')}${f('warrantyYears', 'Workmanship warranty (years)')}${f('workDays', 'Typical job length (work days)')}${f('validDays', 'Proposal valid (days)')}${f('dep1', 'Deposit %')}${f('dep2', 'Due on pour day %')}${f('dep3', 'Due on completion %')}</div></div>
     <div class="card" style="grid-column:1/-1"><h3 style="margin-top:0">Bonuses (shown on the price page)</h3>
       <div style="display:grid;gap:8px">${P.bonuses.map((b, i) => `<div class="row" style="flex-wrap:nowrap"><input type="text" data-b="${i}" data-bf="name" value="${esc(b.name)}" placeholder="Bonus" style="flex:3"><input type="text" data-b="${i}" data-bf="value" value="${esc(b.value)}" placeholder="Value, e.g. $350" style="flex:1"></div>`).join('')}</div>
       <div class="small muted" style="margin-top:6px">Leave a bonus blank to hide it.</div></div>
   </div>
-  <p class="small muted" style="margin-top:16px">Your data is stored in this browser on this Mac. Use <b>Back up data</b> on the Customers page now and then.</p>`;
+  <p class="small muted" style="margin-top:16px">Your data is stored in this browser on this Mac. Use <b>Back up data</b> on the Estimates page now and then.</p>`;
   document.querySelectorAll('[data-k]').forEach(i => i.onchange = () => { P[i.dataset.k] = i.type === 'number' ? (parseFloat(i.value) || 0) : i.value; save(); toast('Saved'); });
+  document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { P.pricingMode = b.dataset.mode; save(); renderSettings(); toast(b.dataset.mode === 'sqft' ? 'Pricing per sq ft' : 'Itemized pricing'); });
   document.querySelectorAll('[data-b]').forEach(i => i.onchange = () => { P.bonuses[+i.dataset.b][i.dataset.bf] = i.value; save(); toast('Saved'); });
 }
 

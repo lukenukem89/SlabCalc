@@ -24,7 +24,9 @@ Desktop app for a concrete contractor (driveways, walkways, patios). Scope: an e
 6. `#/settings`: company info, all unit prices, finish upcharges, guarantee %, warranty years, deposit split, bonuses.
 
 ## Estimate math (see `estimate()`)
-order yd³ = net × (1 + waste%), rounded up to 0.25 · short-load fee under N yd³ · pump/buggy per access · tear-out/sod per "now" · gravel tons = area × base/12/27 × 1.1 × 1.4 (reduced when reusing gravel) · fabric if soft soil · rebar $/sq ft · dowels if garage tie-in · forms $/lf of perimeter · labor $/sq ft · finish upcharge · tax on materials · markup on (subtotal + tax).
+**Default: per-sq-ft pricing** (`pricingMode: 'sqft'`): each pour = area × installed rate for its thickness (owner's rates: 4″ $12, 5″ $14, 6″ $16; 8″ $20 is a placeholder; `sqftRate()`), plus tear-out (concrete/asphalt), pump/buggy and finish upgrades on top, optional `sqftMarkupPct` (0). No separate tax. Itemized mode below is still available in Settings.
+
+Itemized: order yd³ = net × (1 + waste%), rounded up to 0.25 · short-load fee under N yd³ · pump/buggy per access · tear-out/sod per "now" · gravel tons = area × base/12/27 × 1.1 × 1.4 (reduced when reusing gravel) · fabric if soft soil · rebar $/sq ft · dowels if garage tie-in · forms $/lf of perimeter · labor $/sq ft · finish upcharge · tax on materials · markup on (subtotal + tax).
 
 ## Next steps the owner wants
 - Developer ID signing + notarization if the app is shared beyond the owner's Mac.
