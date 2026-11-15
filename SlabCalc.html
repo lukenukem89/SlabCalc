@@ -83,6 +83,7 @@ ol.plan .n{width:26px;height:26px;border-radius:50%;background:var(--ink);color:
 .leaflet-tooltip.plabel{background:rgba(28,31,35,.92);color:#fff;border:none;border-radius:8px;padding:6px 10px;font:12px/1.35 Inter,sans-serif;box-shadow:none}
 .leaflet-tooltip.plabel b{font-size:13px}
 .leaflet-tooltip.plabel:before{display:none}
+.elabel{position:absolute;transform:translate(-50%,-50%);background:#fff;color:#1C1F23;font:600 11.5px/1.2 Inter,sans-serif;padding:2px 6px;border-radius:5px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.35);pointer-events:none}
 .vtx{width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .pourlist button{width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;gap:8px;align-items:center}
 .pourlist button.on{border:2px solid var(--ink)}
@@ -314,6 +315,56 @@ function measurePour(pour) {
     cuft: area * t / 12, yd: area * t / 12 / 27,
     xy, frame: F, axis: alongX ? b.a : b.a + Math.PI / 2
   };
+}
+/* Square up a hand-drawn outline: edges within `tolDeg` of the main axis (or 90° to it) snap to it
+   exactly; deliberately angled edges (a clipped or flared end) are left alone. */
+function squarePts(pts, tolDeg = 12) {
+  if (!pts || pts.length < 3) return pts;
+  const F = frame(pts);
+  let xy = pts.map(F.toXY);
+  const n = xy.length;
+  let li = 0, ll = 0;
+  for (let i = 0; i < n; i++) { const p = xy[i], q = xy[(i + 1) % n], l = Math.hypot(q[0] - p[0], q[1] - p[1]); if (l > ll) { ll = l; li = i; } }
+  const th = Math.atan2(xy[(li + 1) % n][1] - xy[li][1], xy[(li + 1) % n][0] - xy[li][0]);
+  const tol = tolDeg * Math.PI / 180, Q = Math.PI / 2;
+  let lines = [];
+  for (let i = 0; i < n; i++) {
+    const p = xy[i], q = xy[(i + 1) % n];
+    const len = Math.hypot(q[0] - p[0], q[1] - p[1]); if (len < 0.05) continue;
+    let a = Math.atan2(q[1] - p[1], q[0] - p[0]);
+    let rel = ((a - th) % Q + Q) % Q; if (rel > Q / 2) rel -= Q;
+    const snapped = Math.abs(rel) < tol;
+    if (snapped) a -= rel;
+    lines.push({ m: [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], d: [Math.cos(a), Math.sin(a)], len, snapped });
+  }
+  /* merge neighbours that ended up parallel (a tiny jog between two collinear edges) */
+  const par = (a, b) => Math.abs(a.d[0] * b.d[1] - a.d[1] * b.d[0]) < 1e-6;
+  for (let changed = true; changed && lines.length > 3;) {
+    changed = false;
+    for (let i = 0; i < lines.length; i++) {
+      const a = lines[i], b = lines[(i + 1) % lines.length];
+      if (par(a, b)) { const keep = a.len >= b.len ? a : b; keep.len = a.len + b.len; lines.splice(lines.indexOf(keep === a ? b : a), 1); changed = true; break; }
+    }
+  }
+  if (lines.length < 3) return pts;
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const A = lines[(i - 1 + lines.length) % lines.length], B = lines[i];
+    const den = A.d[0] * B.d[1] - A.d[1] * B.d[0];
+    const t = ((B.m[0] - A.m[0]) * B.d[1] - (B.m[1] - A.m[1]) * B.d[0]) / den;
+    out.push([A.m[0] + A.d[0] * t, A.m[1] + A.d[1] * t]);
+  }
+  return out.map(F.toLL);
+}
+/* resize a slab to an exact length or width (feet), keeping it centred where it is */
+function setPourDim(pour, which, ft) {
+  const F = frame(pour.pts), xy = pour.pts.map(F.toXY), b = obb(xy);
+  const r = xy.map(p => rot(p, b.a));
+  const dx = b.maxX - b.minX, dy = b.maxY - b.minY, longX = dx >= dy;
+  const alongX = (which === 'length') === longX;
+  const cur = alongX ? dx : dy; if (!(cur > 0) || !(ft > 0)) return;
+  const k = ft / cur, c = alongX ? (b.minX + b.maxX) / 2 : (b.minY + b.maxY) / 2;
+  pour.pts = r.map(p => alongX ? [c + (p[0] - c) * k, p[1]] : [p[0], c + (p[1] - c) * k]).map(p => F.toLL(unrot(p, b.a)));
 }
 const unit = v => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; };
 /* polyline offset sideways by `off` feet (left = +), mitered at bends */
@@ -724,11 +775,13 @@ function renderMapTab(job) {
       if (on && !drawing) {
         const src = p.path || p.pts, minPts = p.path ? 2 : 3;
         const live = () => { const mm = measurePour(p); poly.setLatLngs(p.pts); jl.forEach(l => layer.removeLayer(l)); jl.length = 0; if (mm) mm.joints.forEach(seg => jl.push(L.polyline(seg, { color: concrete ? '#3B3D40' : '#fff', weight: 2, interactive: false }).addTo(layer))); };
+        if (!p.path) m.xy.forEach((a, i) => { const b = m.xy[(i + 1) % m.xy.length], len = Math.hypot(b[0] - a[0], b[1] - a[1]); if (len < 1.5) return; L.marker(m.frame.toLL([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]), { interactive: false, keyboard: false, icon: L.divIcon({ className: '', iconSize: [0, 0], html: `<span class="elabel">${num(len, 1)} ft</span>` }) }).addTo(vtxLayer); });
         src.forEach((pt, i) => {
           const mk = L.marker(pt, { draggable: true, icon: L.divIcon({ className: '', html: '<div class="vtx"></div>', iconSize: [14, 14], iconAnchor: [7, 7] }) }).addTo(vtxLayer);
           mk.on('drag', ev => { src[i] = [ev.latlng.lat, ev.latlng.lng]; live(); });
-          mk.on('dragend', () => { touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); });
-          mk.on('contextmenu', () => { if (src.length > minPts) { src.splice(i, 1); touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); } });
+          const resq = () => { if (p.square && !p.path) p.pts = squarePts(p.pts); };
+          mk.on('dragend', () => { resq(); touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); });
+          mk.on('contextmenu', () => { if (src.length > minPts) { src.splice(i, 1); resq(); touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); } });
         });
       }
     });
@@ -763,6 +816,7 @@ function renderMapTab(job) {
     const count = job.pours.filter(p => p.kind === kind).length;
     const p = { id: uid(), kind, name: KIND[kind].name + (count ? ' ' + (count + 1) : ''), pts: drawing.pts.slice(), thick: kind === 'driveway' ? recommend(A).thick : 4 };
     if (drawing.path) { p.path = drawing.pts.slice(); p.width = 4; measurePour(p); }
+    else { p.square = true; p.pts = squarePts(p.pts); }
     job.pours.push(p); selId = p.id;
     cancelDraw(); touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job);
   }
@@ -814,6 +868,12 @@ function renderMapTab(job) {
             <div class="row" role="group" aria-label="Thickness">${[4, 5, 6, 8].map(t => `<button class="btn" style="flex:1;justify-content:center" aria-pressed="${sel.thick === t}" data-t="${t}">${t}″</button>`).join('')}</div>
             <div class="small" style="margin-top:8px;padding:8px 10px;border-radius:6px;${advice[0] === 'warn' ? 'background:#FDECEC;color:#8A1F1F' : 'background:#EEF4EC;color:#2B4A25'}">${advice[1]}</div>
           </div>
+          ${!sel.path ? `<div>
+            <div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="f" style="font-size:12px;color:var(--muted);font-weight:600">Exact size</span>
+              <button class="btn sm" id="psq" aria-pressed="${!!sel.square}" title="Snap near-square corners to exactly 90°. Angled ends stay angled.">${sel.square ? '✓ Square corners' : 'Square corners'}</button></div>
+            <div class="grid2"><label class="f">Length (ft)<input type="number" id="plen" min="1" step="0.1" value="${m.L.toFixed(1)}"></label><label class="f">Width (ft)<input type="number" id="pwid" min="1" step="0.1" value="${m.W.toFixed(1)}"></label></div>
+            <div class="small muted" style="margin-top:4px">Type a size to set it exactly — the slab stays centred where you drew it.</div>
+          </div>` : ''}
           ${sel.path ? `<div>
             <div class="f" style="font-size:12px;color:var(--muted);font-weight:600;margin-bottom:6px">Walk width</div>
             <div class="row" role="group" aria-label="Width">${[3, 4, 5, 6].map(w => `<button class="btn" style="flex:1;justify-content:center" aria-pressed="${(sel.width || 4) === w}" data-w="${w}">${w} ft</button>`).join('')}
@@ -863,6 +923,9 @@ function renderMapTab(job) {
       const setW = w => { if (!(w >= 2 && w <= 20)) return; sel.width = w; measurePour(sel); touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); };
       document.querySelectorAll('[data-w]').forEach(b => b.onclick = () => setW(+b.dataset.w));
       const pw = $('#pwidth'); if (pw) pw.onchange = () => setW(parseFloat(pw.value));
+      const redraw = () => { touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); };
+      const sq = $('#psq'); if (sq) sq.onclick = () => { sel.square = !sel.square; if (sel.square) sel.pts = squarePts(sel.pts); redraw(); };
+      [['plen', 'length'], ['pwid', 'width']].forEach(([id, w]) => { const el = $('#' + id); if (el) el.onchange = () => { const v = parseFloat(el.value); if (v > 0 && v < 1000) { if (sel.square) sel.pts = squarePts(sel.pts); setPourDim(sel, w, v); redraw(); } }; });
       const del = $('#pdel');
       if (del) del.onclick = () => {
         if (!del.dataset.sure) { del.dataset.sure = 1; del.textContent = 'Click again to delete'; return; }
