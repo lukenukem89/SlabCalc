@@ -588,6 +588,7 @@ function renderCRM() {
       </a>`;
     }).join('')}
   </div>`;
+  hydrateSat($('#view'));
   $('#newlead').onclick = () => leadModal();
   $('#bk-exp').onclick = exportBackup;
   $('#bk-imp').onchange = e => { importBackup(e.target.files[0]); e.target.value = ''; };
@@ -1226,6 +1227,52 @@ function renderPhotoTab(job) {
 /* =========================================================
    TAB 4: PROPOSAL (5 printable pages)
    ========================================================= */
+/* ---- satellite backdrop for site plans: Esri tiles stitched into one image, cached in memory + IndexedDB ---- */
+const SAT = new Map(), SATDONE = new Map();
+const satKey = (b, w, h) => [b.n, b.s, b.e, b.w].map(v => v.toFixed(6)).join(',') + '@' + w + 'x' + h;
+const lonToPx = (lng, z) => (lng + 180) / 360 * 256 * 2 ** z;
+const latToPx = (lat, z) => { const s = Math.sin(lat * Math.PI / 180); return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 256 * 2 ** z; };
+function satImage(b, w, h) {
+  const key = satKey(b, w, h);
+  if (SAT.has(key)) return SAT.get(key);
+  const p = (async () => {
+    const stored = await idb.get('sat:' + key);
+    if (stored) return stored;
+    const outW = Math.round(w * 1.6), outH = Math.round(h * 1.6);
+    const z = Math.max(1, Math.min(19, Math.floor(Math.log2(outW * 360 / ((b.e - b.w) * 256)))));
+    const X0 = lonToPx(b.w, z), X1 = lonToPx(b.e, z), Y0 = latToPx(b.n, z), Y1 = latToPx(b.s, z);
+    const c = document.createElement('canvas'); c.width = outW; c.height = outH;
+    const ctx = c.getContext('2d'); ctx.imageSmoothingQuality = 'high';
+    const sx = outW / (X1 - X0), sy = outH / (Y1 - Y0), loads = [];
+    for (let tx = Math.floor(X0 / 256); tx <= Math.floor(X1 / 256); tx++)
+      for (let ty = Math.floor(Y0 / 256); ty <= Math.floor(Y1 / 256); ty++)
+        loads.push(new Promise(res => {
+          const im = new Image(); im.crossOrigin = 'anonymous';
+          im.onload = () => { ctx.drawImage(im, (tx * 256 - X0) * sx, (ty * 256 - Y0) * sy, 256 * sx + 0.5, 256 * sy + 0.5); res(true); };
+          im.onerror = () => res(false);
+          im.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${ty}/${tx}`;
+        }));
+    const ok = await Promise.all(loads);
+    if (!ok.every(Boolean)) return null; /* offline or partial: keep the plain background */
+    const url = c.toDataURL('image/jpeg', 0.84);
+    idb.set('sat:' + key, url);
+    return url;
+  })();
+  SAT.set(key, p);
+  p.then(v => { if (v) SATDONE.set(key, v); else SAT.delete(key); });
+  return p;
+}
+/* fill in the satellite backdrop of every site plan on the page; resolves when all are done */
+function hydrateSat(root) {
+  return Promise.all([...(root || document).querySelectorAll('svg[data-sat]:not([data-done])')].map(svg => {
+    const [n, s, e, w] = svg.dataset.sat.split(',').map(Number), W = +svg.dataset.w, H = +svg.dataset.h;
+    return satImage({ n, s, e, w }, W, H).then(url => {
+      if (!url || svg.dataset.done) return;
+      svg.dataset.done = 1;
+      svg.querySelector('.satbg').innerHTML = `<image href="${url}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none"/><rect width="${W}" height="${H}" fill="#fff" opacity="0.08"/>`;
+    });
+  }));
+}
 function sitePlanSVG(E, H = 300) {
   if (!E.pours.length) return '<div class="muted">No pours drawn yet.</div>';
   const all = E.pours.flatMap(x => x.p.pts);
@@ -1234,24 +1281,34 @@ function sitePlanSVG(E, H = 300) {
   const pts = polys.flatMap(p => p.xy);
   const minX = Math.min(...pts.map(p => p[0])), maxX = Math.max(...pts.map(p => p[0]));
   const minY = Math.min(...pts.map(p => p[1])), maxY = Math.max(...pts.map(p => p[1]));
-  const W = 690, pad = 30;
+  const W = 690, pad = 36;
   const sc = Math.min((W - 2 * pad) / Math.max(1, maxX - minX), (H - 2 * pad) / Math.max(1, maxY - minY));
   const ox = (W - (maxX - minX) * sc) / 2, oy = (H - (maxY - minY) * sc) / 2;
   const P = p => [ox + (p[0] - minX) * sc, H - (oy + (p[1] - minY) * sc)];
+  /* geographic bounds of the whole drawing area (north-up, so lat/lng map linearly) */
+  const nw = F.toLL([minX - ox / sc, minY + (H - oy) / sc]), se = F.toLL([minX + (W - ox) / sc, minY - oy / sc]);
+  const b = { n: nw[0], s: se[0], e: se[1], w: nw[1] }, key = satKey(b, W, H);
+  const cached = SATDONE.get(key);
   const fill = { driveway: ['#FBE3D0', '#C2560C'], walkway: ['#DCE7FA', '#2F5FB8'], patio: ['#DDF0E4', '#2F8F5B'] };
   const letters = 'ABCDEFGHIJ';
   const bar = 10 * sc;
-  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Site plan with pour areas and control joints" style="display:block;width:100%;height:auto;border:1px solid #D5D2CC;border-radius:10px;background:#F4F3F0">`;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Site plan over satellite imagery, with pour areas and control joints" data-sat="${b.n},${b.s},${b.e},${b.w}" data-w="${W}" data-h="${H}" ${cached ? 'data-done="1"' : ''} style="display:block;width:100%;height:auto;border:1px solid #D5D2CC;border-radius:10px;background:#E4E2DC">`;
+  s += `<g class="satbg">${cached ? `<image href="${cached}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none"/><rect width="${W}" height="${H}" fill="#fff" opacity="0.08"/>` : ''}</g>`;
+  const badges = [];
   polys.forEach((p, i) => {
-    const c = fill[p.x.p.kind];
-    s += `<polygon points="${p.xy.map(P).map(q => q.join(',')).join(' ')}" fill="${c[0]}" stroke="${c[1]}" stroke-width="2"/>`;
-    p.joints.forEach(j => { const a = P(j[0]), b = P(j[1]); s += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${c[1]}" stroke-width="1.5" stroke-dasharray="5 4"/>`; });
-    const cx = p.xy.reduce((t, q) => t + q[0], 0) / p.xy.length, cy = p.xy.reduce((t, q) => t + q[1], 0) / p.xy.length;
-    const C = P([cx, cy]);
-    s += `<circle cx="${C[0]}" cy="${C[1]}" r="12" fill="#fff" stroke="${c[1]}" stroke-width="2"/><text x="${C[0]}" y="${C[1] + 5}" text-anchor="middle" font-family="Space Grotesk,sans-serif" font-size="14" font-weight="700" fill="${c[1]}">${letters[i]}</text>`;
+    const c = fill[p.x.p.kind], q = p.xy.map(P);
+    s += `<polygon points="${q.map(v => v.join(',')).join(' ')}" fill="${c[0]}" fill-opacity="0.6" stroke="${c[1]}" stroke-width="2.5" stroke-linejoin="round"/>`;
+    p.joints.forEach(j => { const a = P(j[0]), bb = P(j[1]); s += `<line x1="${a[0]}" y1="${a[1]}" x2="${bb[0]}" y2="${bb[1]}" stroke="${c[1]}" stroke-width="1.6" stroke-dasharray="5 4"/>`; });
+    const xs = q.map(v => v[0]), ys = q.map(v => v[1]);
+    const bx0 = Math.min(...xs), bx1 = Math.max(...xs), by0 = Math.min(...ys), by1 = Math.max(...ys);
+    let C = [q.reduce((t, v) => t + v[0], 0) / q.length, q.reduce((t, v) => t + v[1], 0) / q.length];
+    /* too small to hold the badge: put it beside the slab instead */
+    if (Math.min(bx1 - bx0, by1 - by0) < 30) C = bx1 + 18 < W - 16 ? [bx1 + 18, (by0 + by1) / 2] : [bx0 - 18, (by0 + by1) / 2];
+    badges.push(`<circle cx="${C[0]}" cy="${C[1]}" r="12" fill="#fff" stroke="${c[1]}" stroke-width="2"/><text x="${C[0]}" y="${C[1] + 5}" text-anchor="middle" font-family="Space Grotesk,sans-serif" font-size="14" font-weight="700" fill="${c[1]}">${letters[i]}</text>`);
   });
-  s += `<g><line x1="20" y1="${H - 16}" x2="${20 + bar}" y2="${H - 16}" stroke="#1C1F23" stroke-width="2"/><line x1="20" y1="${H - 21}" x2="20" y2="${H - 11}" stroke="#1C1F23" stroke-width="2"/><line x1="${20 + bar}" y1="${H - 21}" x2="${20 + bar}" y2="${H - 11}" stroke="#1C1F23" stroke-width="2"/><text x="${26 + bar}" y="${H - 12}" font-family="Inter,sans-serif" font-size="11" fill="#1C1F23">10 ft</text></g>`;
-  s += `<g transform="translate(${W - 26},26)"><path d="M0 -14 L7 6 L0 1 L-7 6 Z" fill="#1C1F23"/><text y="18" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" font-weight="700">N</text></g></svg>`;
+  s += badges.join('');
+  s += `<g><rect x="10" y="${H - 30}" width="${bar + 58}" height="22" rx="5" fill="#fff" opacity="0.92"/><line x1="20" y1="${H - 16}" x2="${20 + bar}" y2="${H - 16}" stroke="#1C1F23" stroke-width="2"/><line x1="20" y1="${H - 21}" x2="20" y2="${H - 11}" stroke="#1C1F23" stroke-width="2"/><line x1="${20 + bar}" y1="${H - 21}" x2="${20 + bar}" y2="${H - 11}" stroke="#1C1F23" stroke-width="2"/><text x="${26 + bar}" y="${H - 12}" font-family="Inter,sans-serif" font-size="11" fill="#1C1F23">10 ft</text></g>`;
+  s += `<g transform="translate(${W - 28},28)"><circle r="17" fill="#fff" opacity="0.92"/><path d="M0 -12 L6 4 L0 0 L-6 4 Z" fill="#1C1F23"/><text y="14" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" font-weight="700">N</text></g></svg>`;
   return s;
 }
 function renderProposal(job) {
@@ -1325,7 +1382,7 @@ function renderProposal(job) {
   <section class="page"><div class="pad">
     ${head}
     <div><div class="kicker">02 · SCOPE</div><h2>What we're pouring</h2></div>
-    <figure style="margin:0"><figcaption style="font-size:12.5px;color:#5B6068;margin-bottom:6px">Site plan from satellite measurements. Dashed lines are control joints — the panels each slab is cut into.</figcaption>${sitePlanSVG(E)}</figure>
+    <figure style="margin:0"><figcaption style="font-size:12.5px;color:#5B6068;margin-bottom:6px">Site plan from satellite measurements. Dashed lines are control joints — the panels each slab is cut into.</figcaption>${sitePlanSVG(E, 380)}</figure>
     <table><thead><tr><th>AREA</th><th>SIZE</th><th>PANELS</th><th class="r">SQ FT</th><th class="r">THICK</th><th class="r">YD³</th></tr></thead><tbody>
       ${E.pours.map((x, i) => `<tr><td><b>${letters[i]}</b> ${esc(x.p.name)}</td><td>${num(x.m.L)} × ${num(x.m.W)} ft</td><td>${x.m.rectish ? '' : '≈'}${x.m.nW * x.m.nL} × (${num(x.m.pw, 1)} × ${num(x.m.pl, 1)} ft)</td><td class="r">${num(x.m.area)}</td><td class="r">${x.p.thick}″</td><td class="r">${num(x.m.yd, 2)}</td></tr>`).join('')}
       <tr><td colspan="3" style="font-weight:700;border-bottom:none">Total · we order ${num(E.order, 2)} yd³ (${P.waste}% extra so we never run short)</td><td class="r" style="font-weight:700;border-bottom:none">${num(E.area)}</td><td style="border-bottom:none"></td><td class="r" style="font-weight:700;border-bottom:none">${num(E.net, 2)}</td></tr>
@@ -1411,6 +1468,7 @@ function renderProposal(job) {
 
   fitPages();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitPages);
+  hydrateSat($('#tab'));
   idb.get('after:' + job.id).then(d => {
     if (d && ((job.trace || []).length || job.photoFit) && $('#heroWrap')) {
       $('#heroWrap').innerHTML = `<img class="hero" src="${d}" alt="Preview of the home with the new concrete">`;
@@ -1423,6 +1481,9 @@ function renderProposal(job) {
   if (app && app.savePDF) { $('#print').textContent = 'Save PDF'; $('#printhint').textContent = 'Saves a letter-size PDF ready to email or print.'; }
   $('#print').onclick = async () => {
     if (!job.proposalDate) { job.proposalDate = today(); touch(job); }
+    const btn = $('#print'), label = btn.textContent; btn.disabled = true; btn.textContent = 'Preparing…';
+    await Promise.race([hydrateSat($('#tab')), new Promise(r => setTimeout(r, 8000))]);
+    btn.disabled = false; btn.textContent = label;
     fitPages();
     if (app && app.savePDF) {
       const safe = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '').trim();
