@@ -171,7 +171,7 @@ const DEFAULT_SETTINGS = {
   fin_broom: 0, fin_charcoal: 1.25, fin_aggregate: 3.50, fin_stamped: 6.00,
   proof: [], freeCancel: true, guaranteePct: 20, warrantyYears: 2, dep1: 30, dep2: 40, dep3: 30, validDays: 30, workDays: 3,
   bonuses: [
-    { name: 'Penetrating sealer applied at 30 days', value: '' },
+    { name: '', value: '' },
     { name: '1-year check-up visit — we re-inspect every panel', value: '' },
     { name: 'Before / after photo set of your home', value: '' },
     { name: 'Lawn repair along the new edges (seed + straw)', value: '' }
@@ -190,6 +190,7 @@ function save() {
   catch (e) { toast('Could not save — storage is full. Export a backup.'); }
 }
 const uid = () => Math.random().toString(36).slice(2, 10);
+let LOGO = null; /* company logo data URL, loaded from IndexedDB at start */
 const S = () => DB.settings;
 const getJob = id => DB.jobs.find(j => j.id === id);
 
@@ -465,9 +466,9 @@ function workPlan(A) {
   add('Place reinforcement' + (A.tie !== 'none' ? ' and tie-in' : ''),
     'Rebar grid on chairs at mid-depth' + (A.tie === 'garage' ? '; steel dowels drilled into the garage slab so the two never separate' : (A.tie === 'city' ? '; expansion joint where it meets the city sidewalk' : '')) + '.', 'Rebar');
   add('Pour', A.access === 'truck' ? 'Concrete is placed straight from the mixer truck chute.' : (A.access === 'pump' ? 'A pump truck places the concrete where the mixer cannot reach.' : 'Concrete is moved in by power buggy.'), A.access === 'truck' ? 'Concrete' : 'Added', A.access === 'truck' ? '' : 'add');
-  add('Finish and cut control joints', (A.slope === 'steep' ? 'Heavy broom finish for grip on the slope. ' : 'Finish and tooled edges. ') + 'Joints are cut within 24 hours on the panel layout in this proposal, so cracks land in the joints, not across panels.', 'Labor');
-  add('Cure and protect', R.footOnly ? 'Walk on it after 24–48 hours.' : 'Walk on it after 24–48 hours; drive on it after 7 days' + (A.use === 'heavy' ? ', heavy vehicles after 28 days' : '') + '.');
-  add('Seal at about 30 days', 'Penetrating sealer protects against road salt and oil stains.', 'Bonus', 'save');
+  add('Finish and cut control joints', (A.slope === 'steep' ? 'Heavy broom finish for grip on the slope. ' : 'Finish and tooled edges. ') + 'Joints are saw-cut within 24 hours on the panel layout in this proposal, so cracks land in the joints, not across panels.', 'Labor');
+  add('Cure and seal', 'Curing and sealing protect the surface from road salt and oil stains. You get written care instructions for the first week.', 'Included');
+  add('Protect while it cures', R.footOnly ? 'Walk on it once we give the OK, usually after 24–48 hours.' : 'Walk on it once we give the OK, usually after 24–48 hours. No cars or heavy loads for at least 7 days' + (A.use === 'heavy' ? ', heavy vehicles after 28 days' : '') + ', longer in cold weather.');
   return steps;
 }
 
@@ -662,7 +663,8 @@ async function exportBackup() {
   }));
   const proof = {};
   for (const ph of (DB.settings.proof || [])) { const d = await idb.get('proof:' + ph.id); if (d) proof[ph.id] = d; }
-  const blob = new Blob([JSON.stringify({ jobs, settings: DB.settings, proof })], { type: 'application/json' });
+  const logo = await idb.get('logo');
+  const blob = new Blob([JSON.stringify({ jobs, settings: DB.settings, proof, logo: logo || undefined })], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `slabcalc-backup-${today()}.json`; a.click();
   toast('Backup downloaded');
 }
@@ -670,7 +672,8 @@ function importBackup(file) {
   if (!file) return;
   /* merge: estimates are added or updated by id; prices/company only change if the file has them */
   file.text().then(t => {
-    const d = JSON.parse(t); if (!Array.isArray(d.jobs)) { if (d.proof || d.settingsPatch) d.jobs = []; else throw 0; }
+    const d = JSON.parse(t); if (!Array.isArray(d.jobs)) { if (d.proof || d.settingsPatch || d.logo) d.jobs = []; else throw 0; }
+    if (typeof d.logo === 'string' && d.logo.startsWith('data:image/')) { LOGO = d.logo; idb.set('logo', d.logo); }
     let added = 0, updated = 0;
     d.jobs.forEach(j => { if (!j.proposalNo) j.proposalNo = nextProposalNo();
       if (j.photos) { if (j.photos.before) idb.set('before:' + j.id, j.photos.before); if (j.photos.after) idb.set('after:' + j.id, j.photos.after); delete j.photos; } const i = DB.jobs.findIndex(x => x.id === j.id); if (i >= 0) { DB.jobs[i] = j; updated++; } else { DB.jobs.push(j); added++; } });
@@ -1350,7 +1353,7 @@ function renderProposal(job) {
   const startTxt = job.startDate ? fmtDate(job.startDate) : 'the start date we agree on', doneTxt = completion ? fmtDate(completion) : 'the finish date we agree on';
   const sig = job.signed && job.signed.sig ? job.signed : null;
   const letters = 'ABCDEFGHIJ';
-  const head = `<div class="runhead"><span>${ph(P.company, 'Your company')} · Proposal No. ${esc(job.proposalNo || '')}</span><span>${esc(job.name)} · ${ph(job.address, 'Address')}</span></div>`;
+  const head = `<div class="runhead"><span>${ph(P.company, 'Your company')}</span><span>${esc(job.name)} · ${ph(job.address, 'Address')}</span></div>`;
   const terms = parseTerms(job.includes), proof = (P.proof || []).slice(0, 4), extra = terms.length || proof.length, NP = extra ? 6 : 5;
   const foot = n => `<div class="foot"><span>${ph(P.company, 'Your company')} · ${ph(P.phone, 'Phone')}</span><span>Page ${n} of ${NP}</span></div>`;
   const valid = addDays(job.proposalDate || today(), P.validDays);
@@ -1375,7 +1378,7 @@ function renderProposal(job) {
     <div class="small muted" style="margin-top:8px">Completion defaults to start date + ${P.workDays} working days. Yellow fields are missing — fill them in under <a href="#/settings">Prices &amp; company</a>. <span id="printhint">In the print dialog choose “Save as PDF”, paper Letter, margins None.</span></div>
   </div>
   <details class="card noprint" style="margin-bottom:16px"><summary style="cursor:pointer;font-weight:600">What's included ${job.includes ? '· shown on page 5' : '· empty (fill it in to print a checklist page)'}</summary>
-    <div class="small muted" style="margin:8px 0">Paste what the sub's price includes, written for the customer. <b># Title</b> on its own line starts a group; <b>- item</b> makes a ✓ line.</div>
+    <div class="small muted" style="margin:8px 0">Paste what the sub's price includes, written for the customer. <b># Title</b> on its own line starts a group; <b>- item</b> makes a ✓ line, <b>x item</b> a ✗ (not included) line.</div>
     <textarea id="terms" style="width:100%;min-height:220px;font:13px/1.45 Inter,sans-serif">${esc(job.includes || '')}</textarea>
   </details>
   ${E.pours.length ? '' : '<div class="card noprint" style="margin-bottom:16px">Outline at least one pour on the map to fill in the proposal.</div>'}
@@ -1385,9 +1388,9 @@ function renderProposal(job) {
   <section class="page">
     <div style="background:#1C1F23;color:#fff;padding:46px 60px 34px;display:flex;flex-direction:column;gap:24px">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <div><div class="disp" style="font-weight:700;font-size:20px">${P.company ? esc(P.company) : '<span style="color:#FFD86B">[Your company]</span>'}</div>
-        <div style="font-size:12.5px;color:#C9CCD1">${[P.phone, P.email, P.license ? 'Lic. ' + P.license : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
-        <div style="text-align:right;font-size:12.5px;color:#C9CCD1">Proposal No. ${esc(job.proposalNo || '')}<br>${fmtDate(job.proposalDate || today())}</div>
+        <div style="display:flex;align-items:center;gap:16px">${LOGO ? `<img src="${LOGO}" alt="" style="width:74px;height:74px;object-fit:contain;flex:none">` : ''}<div><div class="disp" style="font-weight:700;font-size:20px">${P.company ? esc(P.company) : '<span style="color:#FFD86B">[Your company]</span>'}</div>
+        <div style="font-size:12.5px;color:#C9CCD1">${[P.phone, P.email, P.license ? 'Lic. ' + P.license : ''].filter(Boolean).map(esc).join(' · ')}</div></div></div>
+        <div style="text-align:right;font-size:12.5px;color:#C9CCD1">${fmtDate(job.proposalDate || today())}</div>
       </div>
       <div><div style="font-size:13px;letter-spacing:2px;color:#FFB27A;font-weight:600">CONCRETE PROPOSAL</div>
       <h1 style="margin:6px 0 0;font-size:44px;line-height:1.05;letter-spacing:-1px">${esc(projectTitle(job))}</h1></div>
@@ -1437,7 +1440,7 @@ function renderProposal(job) {
       <div><b>${E.R.base}″ compacted gravel base.</b> Drains water out from under the slab so it does not heave or sink.</div>
       <div><b>#3 rebar grid, 18″ apart.</b> Holds the slab together if the ground moves.</div>
       <div><b>Control joints on a planned layout.</b> Concrete shrinks as it cures — joints make any crack happen in the joint, not across your slab.</div>
-      <div><b>${esc(fin.desc)}${fin.id === 'broom' ? ', tooled edges' : ''}.</b> ${fin.id === 'broom' ? 'Slip-resistant when wet.' : 'Chosen finish, sealed at 30 days.'}</div>
+      <div><b>${esc(fin.desc)}${fin.id === 'broom' ? ', tooled edges' : ''}.</b> ${fin.id === 'broom' ? 'Slip-resistant when wet.' : 'Chosen finish, cured and sealed.'}</div>
     </div></div>
     ${foot(2)}
   </div></section>
@@ -1484,7 +1487,7 @@ function renderProposal(job) {
     ${head}
     ${terms.length ? `<div><div class="kicker">05 · WHAT'S INCLUDED</div><h2>Everything in your price</h2><div style="font-size:14.5px;color:#3C4047">No surprise add-ons: this is the full list of what we do.</div></div>` : `<div><div class="kicker">05 · OUR WORK</div><h2>Recent jobs by our crews</h2></div>`}
     <div style="column-count:2;column-gap:30px;font-size:14px;line-height:1.45;color:#2A2D31">
-      ${terms.map(t => `<div style="break-inside:avoid;margin-bottom:16px">${t.title ? `<div class="disp" style="font-weight:700;font-size:17px;color:#1C1F23;margin-bottom:6px;border-bottom:2px solid #1C1F23;padding-bottom:3px">${esc(t.title)}</div>` : ''}${t.paras.map(x => x.bullet ? `<div style="display:flex;gap:9px;padding:3px 0"><span style="color:#2F8F5B;font-weight:700;flex:none">✓</span><span>${esc(x.text)}</span></div>` : `<p style="margin:0 0 6px">${esc(x.text)}</p>`).join('')}</div>`).join('')}
+      ${terms.map(t => `<div style="break-inside:avoid;margin-bottom:16px">${t.title ? `<div class="disp" style="font-weight:700;font-size:17px;color:#1C1F23;margin-bottom:6px;border-bottom:2px solid #1C1F23;padding-bottom:3px">${esc(t.title)}</div>` : ''}${t.paras.map(x => x.bullet ? `<div style="display:flex;gap:9px;padding:3px 0"><span style="color:${x.no ? '#9A9FA6' : '#2F8F5B'};font-weight:700;flex:none">${x.no ? '✗' : '✓'}</span><span>${esc(x.text)}</span></div>` : `<p style="margin:0 0 6px">${esc(x.text)}</p>`).join('')}</div>`).join('')}
     </div>
     ${proof.length ? `<div>${terms.length ? '<div class="disp" style="font-weight:700;font-size:17px;margin-bottom:8px">Recent jobs by our crews</div>' : ''}
       <div style="display:grid;grid-template-columns:repeat(${terms.length ? Math.min(proof.length, 2) : (proof.length === 1 ? 1 : 2)},1fr);gap:10px">
@@ -1509,7 +1512,7 @@ function renderProposal(job) {
     </div>
     <div style="font-size:12.5px;line-height:1.5;color:#3C4047">
       <div class="disp" style="font-weight:700;font-size:15px;color:#1C1F23;margin-bottom:3px">How the on-time guarantee works</div>
-      <div><b>"Finished"</b> means the concrete is poured, finished, joints cut, forms removed and the site cleaned up. Curing time and the sealer visit are not counted.</div>
+      <div><b>"Finished"</b> means the concrete is poured, finished, joints cut, forms removed and the site cleaned up. Curing time is not counted.</div>
       <div style="margin-top:4px"><b>The date moves day-for-day</b> only for things outside our control: rain, frozen ground or overnight lows forecast below 40°F; changes you ask for; permit, inspection or utility-locate delays; buried debris or soil problems found during digging; or the work area being blocked. We tell you in writing the same day if the date moves, and why.</div>
       <div style="margin-top:4px">One payment per project, ${money(gAmt)} total. The warranty does not cover ordinary hairline or shrinkage cracks, color variation, soil movement not caused by our work, weathering, de-icing salts, not following the curing instructions, overweight vehicles, tree roots, or damage by others.</div>
     </div>
@@ -1553,7 +1556,7 @@ function renderProposal(job) {
     fitPages();
     if (app && app.savePDF) {
       const safe = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '').trim();
-      const r = await app.savePDF(`Proposal ${safe(job.proposalNo)} - ${safe(job.name) || 'Customer'}.pdf`);
+      const r = await app.savePDF(`Proposal - ${safe(job.name) || "Customer"}.pdf`);
       if (r && r.saved) toast('PDF saved');
       else if (r && r.error) toast('Could not save the PDF: ' + r.error);
     } else window.print();
@@ -1612,6 +1615,7 @@ function parseTerms(txt) {
   String(txt || '').split(/\r?\n/).forEach(line => {
     const l = line.trim();
     if (/^#+\s/.test(l)) { flush(); out.push(cur = { title: l.replace(/^#+\s*/, ''), paras: [] }); }
+    else if (/^[xX✗×]\s+/.test(l)) { flush(); sec().paras.push({ text: l.replace(/^[xX✗×]\s+/, ''), bullet: true, no: true }); }
     else if (/^[-•*✓]\s*/.test(l) && l.length > 1) { flush(); sec().paras.push({ text: l.replace(/^[-•*✓]\s*/, ''), bullet: true }); }
     else if (!l) flush();
     else buf.push(l);
@@ -1699,7 +1703,7 @@ function renderSubRequest(job) {
   <section class="page"><div class="pad">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px">
       <div><div class="kicker">REQUEST FOR QUOTE</div><h2>${esc(projectTitle(job))}</h2><div style="font-size:15px;margin-top:2px">${ph(job.address, 'Job address')}</div></div>
-      <div style="text-align:right;font-size:13px;line-height:1.5"><div class="disp" style="font-weight:700;font-size:16px">${co}</div>${[P.phone, P.email].filter(Boolean).map(esc).join('<br>')}<div style="color:#5B6068">${fmtDate(today())}</div></div>
+      <div style="text-align:right;font-size:13px;line-height:1.5">${LOGO ? `<img src="${LOGO}" alt="" style="width:60px;height:60px;object-fit:contain;display:block;margin:0 0 4px auto">` : ''}<div class="disp" style="font-weight:700;font-size:16px">${co}</div>${[P.phone, P.email].filter(Boolean).map(esc).join('<br>')}<div style="color:#5B6068">${fmtDate(today())}</div></div>
     </div>
     <div style="display:flex;gap:14px;font-size:13.5px">
       <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:10px 14px"><div style="color:#5B6068;font-size:12px">To</div><b>${sub.name ? esc(sub.name) : '<span class="ph">[Subcontractor]</span>'}</b></div>
@@ -1769,7 +1773,10 @@ function renderSettings() {
   <h1 style="margin:0 0 4px;font-size:28px">Prices &amp; company</h1>
   <p class="muted" style="margin:0 0 16px">Set these once. Every estimate and proposal uses them. Changes save automatically.</p>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px">
-    <div class="card"><h3 style="margin-top:0">Company</h3><div style="display:grid;gap:10px">${t('company', 'Company name')}${t('phone', 'Phone')}${t('email', 'Email')}${t('license', 'License #')}</div></div>
+    <div class="card"><h3 style="margin-top:0">Company</h3><div style="display:grid;gap:10px">${t('company', 'Company name')}${t('phone', 'Phone')}${t('email', 'Email')}${t('license', 'License #')}
+      <div class="row" style="align-items:center;gap:12px">${LOGO ? `<img src="${LOGO}" alt="Logo" style="width:64px;height:64px;object-fit:contain;border-radius:8px;background:#F4F3F0">` : '<span class="small muted">No logo yet</span>'}
+        <label class="btn sm">${LOGO ? 'Change logo' : 'Add logo'}<input type="file" accept="image/*" id="logoadd" hidden></label>${LOGO ? '<button class="btn sm danger" id="logodel">Remove</button>' : ''}</div>
+      <div class="small muted">Prints on the proposal cover and the sub request. A PNG with a transparent background looks best.</div></div></div>
     <div class="card" style="border:2px solid var(--accent)"><h3 style="margin-top:0">How you price</h3>
       <div class="row" role="group" aria-label="Pricing method" style="margin-bottom:12px">
         <button class="btn" style="flex:1;justify-content:center" data-mode="sqft" aria-pressed="${simple}">Price per sq ft</button>
@@ -1796,6 +1803,8 @@ function renderSettings() {
   document.querySelectorAll('[data-k]').forEach(i => i.onchange = () => { P[i.dataset.k] = i.type === 'number' ? (parseFloat(i.value) || 0) : i.value; save(); toast('Saved'); });
   document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { P.pricingMode = b.dataset.mode; save(); renderSettings(); toast(b.dataset.mode === 'sqft' ? 'Pricing per sq ft' : 'Itemized pricing'); });
   document.querySelectorAll('[data-b]').forEach(i => i.onchange = () => { P.bonuses[+i.dataset.b][i.dataset.bf] = i.value; save(); toast('Saved'); });
+  $('#logoadd').onchange = async e => { const f = e.target.files[0]; if (!f) return; const url = await shrinkImage(f, 600, 'image/png').catch(() => null); if (!url) return toast(`Couldn't read ${f.name}`); LOGO = url; await idb.set('logo', url); renderSettings(); toast('Logo saved'); };
+  if ($('#logodel')) $('#logodel').onclick = () => { LOGO = null; idb.del('logo'); renderSettings(); };
   P.proof = P.proof || [];
   document.querySelectorAll('#proofgrid img[data-proof]').forEach(im => idb.get('proof:' + im.dataset.proof).then(d => { if (d) im.src = d; }));
   document.querySelectorAll('[data-pc]').forEach(i => i.onchange = () => { P.proof[+i.dataset.pc].caption = i.value.trim(); save(); toast('Saved'); });
@@ -1812,15 +1821,16 @@ function renderSettings() {
   };
 }
 /* read an image file and return a JPEG data URL no wider/taller than max px */
-function shrinkImage(file, max) {
+function shrinkImage(file, max, type) {
   return new Promise((res, rej) => {
     const u = URL.createObjectURL(file), im = new Image();
-    im.onload = () => { const k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight)); const c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u); res(c.toDataURL('image/jpeg', 0.85)); };
+    im.onload = () => { const k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight)); const c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u); res(type === 'image/png' ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.85)); };
     im.onerror = () => { URL.revokeObjectURL(u); rej(); };
     im.src = u;
   });
 }
 
+idb.get('logo').then(d => { if (d && !LOGO) { LOGO = d; if (/proposal|sub|settings/.test(location.hash)) route(); } });
 route();
 </script>
 </body>
