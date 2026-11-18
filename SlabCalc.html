@@ -1,0 +1,1872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SlabCalc — Concrete Estimating</title>
+<!-- Leaflet and fonts are bundled in ./vendor (run `npm run vendor`) so the app works offline -->
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<script src="vendor/leaflet/leaflet.js"></script>
+<link rel="stylesheet" href="vendor/fonts/fonts.css">
+<style>
+:root{--ink:#1C1F23;--muted:#5B6068;--line:#E2E0DB;--bg:#F4F3F0;--panel:#fff;--accent:#C2560C;--accent-soft:#FFF1E6;--accent-ink:#8A3D08;--drive:#E06A12;--walk:#2F6FE0;--patio:#2F8F5B}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:Inter,system-ui,-apple-system,sans-serif;color:var(--ink);background:var(--bg);font-size:15px;line-height:1.45}
+h1,h2,h3,.disp{font-family:'Space Grotesk',Inter,sans-serif}
+a{color:#B4500B}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+.btn{height:40px;padding:0 14px;border-radius:8px;border:1px solid #D5D2CC;background:#fff;display:inline-flex;align-items:center;gap:8px;font-weight:500;white-space:nowrap}
+.btn:hover{border-color:#A8A49C}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn.primary:hover{background:#A9490A}
+.btn.dark{background:var(--ink);border-color:var(--ink);color:#fff}
+.btn.ghost{background:transparent;border-color:transparent}
+.btn.danger{color:#A1261C}
+.btn.sm{height:32px;padding:0 10px;font-size:13px}
+.btn[aria-pressed=true]{border:2px solid var(--accent);background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
+input[type=text],input[type=number],input[type=email],input[type=tel],input[type=date],select,textarea{border:1px solid #D5D2CC;border-radius:8px;padding:8px 10px;background:#fff;width:100%}
+textarea{min-height:70px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:600}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.eyebrow{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:600}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.big{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:26px;line-height:1.15}
+.huge{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;letter-spacing:-1px;line-height:1.1}
+
+/* header */
+header.top{background:var(--ink);color:#fff;display:flex;align-items:center;gap:16px;padding:10px 20px;flex-wrap:wrap}
+header.top .brand{display:flex;align-items:center;gap:10px;font-family:'Space Grotesk';font-weight:700;font-size:18px;color:#fff;text-decoration:none}
+header.top nav{margin-left:auto;display:flex;gap:4px;flex-wrap:wrap}
+header.top nav a{color:#C9CCD1;text-decoration:none;padding:9px 13px;border-radius:8px;font-size:14px}
+header.top nav a.on{background:#2B2F35;color:#fff;font-weight:600}
+main{padding:20px;max-width:1500px;margin:0 auto}
+
+/* estimate list */
+.elist{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:16px}
+.ecard{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;text-decoration:none;color:inherit}
+.ecard:hover{border-color:var(--accent);box-shadow:0 2px 10px rgba(0,0,0,.06)}
+.ecard .thumb{height:130px;background:#F4F3F0;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.ecard .thumb svg{width:100%;height:100%;border:none!important;border-radius:0!important}
+.ecard .body{padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.ecard .meta{font-size:12.5px;color:var(--muted)}
+
+/* job */
+.jobhead{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px}
+.steps{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.steps a{padding:8px 14px;border-radius:20px;background:#E2E0DB;color:#3C4047;text-decoration:none;font-size:13px}
+.steps a.on{background:var(--ink);color:#fff;font-weight:600}
+.split{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+.split>.main{flex:999 1 620px;min-width:0}
+.split>.side{flex:1 1 380px;min-width:0}
+fieldset.q{border:1px solid var(--line);background:#fff;border-radius:10px;padding:12px 14px;margin:0 0 10px}
+fieldset.q legend{float:left;width:100%;padding:0;font-weight:600;font-size:15px}
+fieldset.q .why{clear:both;font-size:13px;color:var(--muted);margin-bottom:8px}
+.chip{min-height:40px;padding:0 14px;border-radius:20px;border:1px solid #D5D2CC;background:#fff;font-size:14px;margin:0 6px 6px 0}
+.chip[aria-pressed=true]{border:2px solid var(--accent);background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
+ol.plan{list-style:none;margin:0;padding:0}
+ol.plan li{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid #ECEAE5}
+ol.plan .n{width:26px;height:26px;border-radius:50%;background:var(--ink);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+.tag{align-self:flex-start;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;white-space:nowrap;background:#F4F3F0;color:#3C4047}
+.tag.add{background:#FDECEC;color:#8A1F1F}.tag.save{background:#EEF4EC;color:#2B4A25}.tag.opt{background:#E8EEF9;color:#1E3F7A}
+
+/* map */
+#map{height:min(640px,calc(100vh - 240px));min-height:420px;border-radius:12px;border:1px solid #C9C6BF;background:#5E7448}
+.maptools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+.hint .btn:not(.primary){color:#1C1F23;background:#fff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.hint{background:rgba(28,31,35,.94);color:#fff;border-radius:10px;padding:10px 14px;font-size:14px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+.leaflet-tooltip.plabel{background:rgba(28,31,35,.92);color:#fff;border:none;border-radius:8px;padding:6px 10px;font:12px/1.35 Inter,sans-serif;box-shadow:none}
+.leaflet-tooltip.plabel b{font-size:13px}
+.leaflet-tooltip.plabel:before{display:none}
+.elabel{position:absolute;transform:translate(-50%,-50%);background:#fff;color:#1C1F23;font:600 11.5px/1.2 Inter,sans-serif;padding:2px 6px;border-radius:5px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.35);pointer-events:none}
+.vtx{width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.vhit{width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:move}
+.vhit:hover .vtx{transform:scale(1.25)}
+.vmid{width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:copy}
+.vmid span{width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.75);border:2px solid var(--accent);font:700 10px/8px Inter,sans-serif;color:var(--accent);text-align:center}
+.vmove{width:34px;height:34px;border-radius:50%;background:#1C1F23;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;cursor:grab;box-shadow:0 1px 4px rgba(0,0,0,.5);border:2px solid #fff}
+.pourlist button{width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;gap:8px;align-items:center}
+.pourlist button.on{border:2px solid var(--ink)}
+.dot{width:10px;height:10px;border-radius:3px;flex:none}
+table.lines{width:100%;border-collapse:collapse;font-size:14px}
+table.lines td{padding:7px 0;border-bottom:1px solid #ECEAE5;vertical-align:top}
+table.lines td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:10px}
+table.lines .d{font-size:12px;color:var(--muted)}
+.xs{display:flex;gap:12px}
+.xs .stack{width:110px;flex:none;border:1px solid #C9C6BF;border-radius:6px;overflow:hidden;display:flex;flex-direction:column}
+
+/* photo */
+.canv{width:100%;border-radius:10px;border:1px solid var(--line);background:#E8E6E1;display:block}
+.finopt{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;padding:8px 12px;border-radius:10px;border:1px solid #D5D2CC;background:#fff;margin-bottom:8px;text-align:left}
+.finopt[aria-pressed=true]{border:2px solid var(--accent);background:var(--accent-soft)}
+.sw{width:34px;height:34px;border-radius:6px;border:1px solid #A8A49C;flex:none}
+
+/* modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:5000;padding:20px}
+.modal{background:#fff;border-radius:14px;padding:20px;width:min(560px,100%);max-height:90vh;overflow:auto}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;border-radius:20px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:6000}
+#toast.show{opacity:1}
+
+/* proposal */
+.pages{display:flex;flex-direction:column;align-items:center;gap:24px}
+.page{width:8.5in;height:11in;background:#fff;box-shadow:0 2px 14px rgba(0,0,0,.15);position:relative;overflow:hidden;display:flex;flex-direction:column;color:#1C1F23;font-size:15px}
+.page .pad{padding:44px 60px 34px;display:flex;flex-direction:column;gap:16px;flex:1}
+.page .runhead{display:flex;justify-content:space-between;font-size:11.5px;color:#5B6068;border-bottom:1px solid #E2E0DB;padding-bottom:9px}
+.page .foot{margin-top:auto;display:flex;justify-content:space-between;font-size:11.5px;color:#5B6068}
+.page h2{margin:2px 0 0;font-size:30px;line-height:1.15}
+.page .kicker{font-size:12.5px;letter-spacing:2px;color:#B4500B;font-weight:600}
+.page table{width:100%;border-collapse:collapse;font-size:14px}
+.page th{text-align:left;font-size:11.5px;color:#5B6068;letter-spacing:.5px;padding:6px 0;border-bottom:2px solid #1C1F23;font-weight:600}
+.page td{padding:7px 0;border-bottom:1px solid #D5D2CC}
+.page td.r,.page th.r{text-align:right}
+.page img.hero{width:100%;height:420px;object-fit:cover;border-radius:10px;display:block}
+.tier{border:1px solid #A8A49C;border-radius:10px;padding:10px 12px;position:relative}
+.tier.on{border:2px solid #1C1F23}
+.tier .badge{position:absolute;top:-10px;left:10px;background:#1C1F23;color:#fff;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:10px}
+.box{width:16px;height:16px;border:2px solid #1C1F23;border-radius:3px;display:inline-block;vertical-align:-3px;margin-right:6px}
+.ph{background:#FFF6CC}
+
+@media print{
+  @page{size:letter;margin:0}
+  body{background:#fff}
+  header.top,.noprint,.steps,.jobhead{display:none!important}
+  main{padding:0;max-width:none}
+  .pages{gap:0;display:block}
+  .page{box-shadow:none;break-after:page;page-break-after:always}
+  .page:last-child{break-after:auto;page-break-after:auto}
+  .ph{background:none}
+}
+</style>
+</head>
+<body>
+<header class="top noprint">
+  <a class="brand" href="#/">
+    <svg width="26" height="26" viewBox="0 0 28 28" aria-hidden="true"><rect x="2" y="14" width="24" height="10" rx="2" fill="#E06A12"/><rect x="2" y="9" width="24" height="4" rx="1" fill="#9AA0A8"/><path d="M6 9 L11 4 L16 9" stroke="#fff" stroke-width="2" fill="none"/></svg>
+    SlabCalc
+  </a>
+  <nav aria-label="Main">
+    <a href="#/" id="nav-crm">Estimates</a>
+    <a href="#/settings" id="nav-set">Prices &amp; company</a>
+  </nav>
+</header>
+<main id="view"></main>
+<div id="toast" role="status"></div>
+
+<script>
+'use strict';
+/* =========================================================
+   STORAGE
+   ========================================================= */
+const KEY = 'slabcalc.v1';
+const DEFAULT_SETTINGS = {
+  company: '', phone: '', email: '', license: '', city: '',
+  priceYard: 165, waste: 10, roundYard: 0.25, shortLoadMin: 5, shortLoadFee: 150,
+  pumpFee: 450, buggySqft: 1.00,
+  demoConcreteSqft: 2.50, demoAsphaltSqft: 1.75, sodSqft: 0.60,
+  gravelTon: 38, gravelReuse: 50, fabricSqft: 0.35,
+  rebarSqft: 0.85, dowelFlat: 150, formsLf: 1.75, laborSqft: 4.50,
+  taxPct: 7, markupPct: 15,
+  /* simple pricing: installed price per sq ft by slab thickness (removal, pump/buggy and finish upgrades extra) */
+  pricingMode: 'sqft', sqft4: 12, sqft5: 14, sqft6: 16, sqft8: 20, sqftMarkupPct: 0,
+  fin_broom: 0, fin_charcoal: 1.25, fin_aggregate: 3.50, fin_stamped: 6.00,
+  proof: [], freeCancel: true, guaranteePct: 20, warrantyYears: 2, dep1: 30, dep2: 40, dep3: 30, validDays: 30, workDays: 3,
+  bonuses: [
+    { name: '', value: '' },
+    { name: '1-year check-up visit — we re-inspect every panel', value: '' },
+    { name: 'Before / after photo set of your home', value: '' },
+    { name: 'Lawn repair along the new edges (seed + straw)', value: '' }
+  ]
+};
+let DB = load();
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY));
+    if (d && d.jobs) { d.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings || {}); return d; }
+  } catch (e) {}
+  return { jobs: [], settings: Object.assign({}, DEFAULT_SETTINGS) };
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(DB)); }
+  catch (e) { toast('Could not save — storage is full. Export a backup.'); }
+}
+const uid = () => Math.random().toString(36).slice(2, 10);
+let LOGO = null; /* company logo data URL, loaded from IndexedDB at start */
+const S = () => DB.settings;
+const getJob = id => DB.jobs.find(j => j.id === id);
+
+/* photos live in IndexedDB (too big for localStorage) */
+const idb = (() => {
+  let dbp = null;
+  function open() {
+    if (dbp) return dbp;
+    dbp = new Promise((res, rej) => {
+      const r = indexedDB.open('slabcalc-photos', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('p');
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    });
+    return dbp;
+  }
+  return {
+    async get(k) { try { const d = await open(); return await new Promise(res => { const q = d.transaction('p').objectStore('p').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(null); }); } catch (e) { return null; } },
+    async set(k, v) { try { const d = await open(); await new Promise(res => { const t = d.transaction('p', 'readwrite'); t.objectStore('p').put(v, k); t.oncomplete = res; t.onerror = res; }); } catch (e) {} },
+    async del(k) { try { const d = await open(); d.transaction('p', 'readwrite').objectStore('p').delete(k); } catch (e) {} }
+  };
+})();
+
+/* =========================================================
+   HELPERS
+   ========================================================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = (n, d = 0) => (n || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: d, minimumFractionDigits: d });
+const num = (n, d = 0) => (n || 0).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
+const ph = (v, label) => v ? esc(v) : `<span class="ph">[${label}]</span>`;
+function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2400); }
+function fmtDate(iso) { if (!iso) return ''; const d = new Date(iso + 'T12:00:00'); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+/* dates are local calendar days (toISOString is UTC and rolls over to tomorrow in the evening) */
+const isoLocal = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function addDays(iso, n) { const d = iso ? new Date(iso + 'T12:00:00') : new Date(); d.setDate(d.getDate() + n); return isoLocal(d); }
+function addWorkDays(iso, n) { if (!iso) return ''; const d = new Date(iso + 'T12:00:00'); let k = 0; while (k < n - 1) { d.setDate(d.getDate() + 1); const w = d.getDay(); if (w && w !== 6) k++; } return isoLocal(d); }
+const today = () => isoLocal(new Date());
+
+/* =========================================================
+   GEOMETRY (lat/lng <-> local feet)
+   ========================================================= */
+/* local tangent frame; WGS84 feet-per-degree at the pour's latitude */
+const M2FT = 3.280839895;
+function frame(pts) {
+  const lat0 = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const lng0 = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  const phi = lat0 * Math.PI / 180;
+  const ky = (111132.92 - 559.82 * Math.cos(2 * phi) + 1.175 * Math.cos(4 * phi)) * M2FT;
+  const kx = (111412.84 * Math.cos(phi) - 93.5 * Math.cos(3 * phi)) * M2FT;
+  return {
+    toXY: p => [(p[1] - lng0) * kx, (p[0] - lat0) * ky],
+    toLL: q => [q[1] / ky + lat0, q[0] / kx + lng0]
+  };
+}
+function polyArea(xy) { let a = 0; for (let i = 0; i < xy.length; i++) { const p = xy[i], q = xy[(i + 1) % xy.length]; a += p[0] * q[1] - q[0] * p[1]; } return Math.abs(a) / 2; }
+function polyPerim(xy) { let s = 0; for (let i = 0; i < xy.length; i++) { const p = xy[i], q = xy[(i + 1) % xy.length]; s += Math.hypot(q[0] - p[0], q[1] - p[1]); } return s; }
+function rot(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0] * c + p[1] * s, -p[0] * s + p[1] * c]; }
+function unrot(p, a) { return rot(p, -a); }
+function obb(xy) {
+  let best = null;
+  for (let i = 0; i < xy.length; i++) {
+    const p = xy[i], q = xy[(i + 1) % xy.length];
+    const a = Math.atan2(q[1] - p[1], q[0] - p[0]);
+    const r = xy.map(v => rot(v, a));
+    const xs = r.map(v => v[0]), ys = r.map(v => v[1]);
+    const b = { a, minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+    b.area = (b.maxX - b.minX) * (b.maxY - b.minY);
+    if (!best || b.area < best.area) best = b;
+  }
+  return best;
+}
+function segInt(p, p2, a, b) {
+  const r = [p2[0] - p[0], p2[1] - p[1]], s = [b[0] - a[0], b[1] - a[1]];
+  const den = r[0] * s[1] - r[1] * s[0];
+  if (Math.abs(den) < 1e-12) return null;
+  const t = ((a[0] - p[0]) * s[1] - (a[1] - p[1]) * s[0]) / den;
+  const u = ((a[0] - p[0]) * r[1] - (a[1] - p[1]) * r[0]) / den;
+  return (u >= 0 && u <= 1) ? t : null;
+}
+function clipLine(p, p2, poly) {
+  const ts = [];
+  for (let i = 0; i < poly.length; i++) { const t = segInt(p, p2, poly[i], poly[(i + 1) % poly.length]); if (t !== null && t >= 0 && t <= 1) ts.push(t); }
+  ts.sort((x, y) => x - y);
+  const uniq = ts.filter((t, i) => i === 0 || t - ts[i - 1] > 1e-6);
+  const out = [];
+  for (let i = 0; i + 1 < uniq.length; i += 2) {
+    const A = [p[0] + (p2[0] - p[0]) * uniq[i], p[1] + (p2[1] - p[1]) * uniq[i]];
+    const B = [p[0] + (p2[0] - p[0]) * uniq[i + 1], p[1] + (p2[1] - p[1]) * uniq[i + 1]];
+    if (Math.hypot(B[0] - A[0], B[1] - A[1]) > 0.5) out.push([A, B]);
+  }
+  return out;
+}
+/* measure one pour: area, perimeter, length/width, joint layout.
+   Walkways drawn as a centerline (pour.path + pour.width) get panels that follow the path. */
+function measurePour(pour) {
+  if (pour.path && pour.path.length >= 2) return measurePath(pour);
+  if (!pour.pts || pour.pts.length < 3) return null;
+  const F = frame(pour.pts);
+  const xy = pour.pts.map(F.toXY);
+  const area = polyArea(xy), perim = polyPerim(xy);
+  const b = obb(xy);
+  const dx = b.maxX - b.minX, dy = b.maxY - b.minY;
+  const alongX = dx >= dy;
+  const L = Math.max(dx, dy), W = Math.min(dx, dy);
+  const t = pour.thick || 4;
+  const max = Math.min(t * 2.5, 15);
+  const nW = Math.max(1, Math.ceil(W / max - 1e-9));
+  const pw = W / nW;
+  const nL = Math.max(1, Math.ceil(L / Math.min(max, pw * 1.25) - 1e-9));
+  const pl = L / nL;
+  const joints = [];
+  const ext = 2;
+  const addLine = (P, Q) => { clipLine(unrot(P, b.a), unrot(Q, b.a), xy).forEach(s => joints.push(s.map(F.toLL))); };
+  if (alongX) {
+    for (let i = 1; i < nL; i++) { const x = b.minX + i * pl; addLine([x, b.minY - ext], [x, b.maxY + ext]); }
+    for (let j = 1; j < nW; j++) { const y = b.minY + j * pw; addLine([b.minX - ext, y], [b.maxX + ext, y]); }
+  } else {
+    for (let i = 1; i < nL; i++) { const y = b.minY + i * pl; addLine([b.minX - ext, y], [b.maxX + ext, y]); }
+    for (let j = 1; j < nW; j++) { const x = b.minX + j * pw; addLine([x, b.minY - ext], [x, b.maxY + ext]); }
+  }
+  const rectish = area / (L * W) > 0.92;
+  return {
+    area, perim, L, W, nW, nL, pw, pl, max, joints, rectish,
+    panels: Math.max(1, Math.round(area / (pw * pl))),
+    cuft: area * t / 12, yd: area * t / 12 / 27,
+    xy, frame: F, axis: alongX ? b.a : b.a + Math.PI / 2
+  };
+}
+/* Square up a hand-drawn outline: edges within `tolDeg` of the main axis (or 90° to it) snap to it
+   exactly; deliberately angled edges (a clipped or flared end) are left alone. */
+function squarePts(pts, tolDeg = 12) {
+  if (!pts || pts.length < 3) return pts;
+  const F = frame(pts);
+  let xy = pts.map(F.toXY);
+  const n = xy.length;
+  let li = 0, ll = 0;
+  for (let i = 0; i < n; i++) { const p = xy[i], q = xy[(i + 1) % n], l = Math.hypot(q[0] - p[0], q[1] - p[1]); if (l > ll) { ll = l; li = i; } }
+  const th = Math.atan2(xy[(li + 1) % n][1] - xy[li][1], xy[(li + 1) % n][0] - xy[li][0]);
+  const tol = tolDeg * Math.PI / 180, Q = Math.PI / 2;
+  let lines = [];
+  for (let i = 0; i < n; i++) {
+    const p = xy[i], q = xy[(i + 1) % n];
+    const len = Math.hypot(q[0] - p[0], q[1] - p[1]); if (len < 0.05) continue;
+    let a = Math.atan2(q[1] - p[1], q[0] - p[0]);
+    let rel = ((a - th) % Q + Q) % Q; if (rel > Q / 2) rel -= Q;
+    const snapped = Math.abs(rel) < tol;
+    if (snapped) a -= rel;
+    lines.push({ m: [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], d: [Math.cos(a), Math.sin(a)], len, snapped });
+  }
+  /* merge neighbours that ended up parallel (a tiny jog between two collinear edges) */
+  const par = (a, b) => Math.abs(a.d[0] * b.d[1] - a.d[1] * b.d[0]) < 1e-6;
+  for (let changed = true; changed && lines.length > 3;) {
+    changed = false;
+    for (let i = 0; i < lines.length; i++) {
+      const a = lines[i], b = lines[(i + 1) % lines.length];
+      if (par(a, b)) { const keep = a.len >= b.len ? a : b; keep.len = a.len + b.len; lines.splice(lines.indexOf(keep === a ? b : a), 1); changed = true; break; }
+    }
+  }
+  if (lines.length < 3) return pts;
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const A = lines[(i - 1 + lines.length) % lines.length], B = lines[i];
+    const den = A.d[0] * B.d[1] - A.d[1] * B.d[0];
+    const t = ((B.m[0] - A.m[0]) * B.d[1] - (B.m[1] - A.m[1]) * B.d[0]) / den;
+    out.push([A.m[0] + A.d[0] * t, A.m[1] + A.d[1] * t]);
+  }
+  return out.map(F.toLL);
+}
+/* resize a slab to an exact length or width (feet), keeping it centred where it is */
+function setPourDim(pour, which, ft) {
+  const F = frame(pour.pts), xy = pour.pts.map(F.toXY), b = obb(xy);
+  const r = xy.map(p => rot(p, b.a));
+  const dx = b.maxX - b.minX, dy = b.maxY - b.minY, longX = dx >= dy;
+  const alongX = (which === 'length') === longX;
+  const cur = alongX ? dx : dy; if (!(cur > 0) || !(ft > 0)) return;
+  const k = ft / cur, c = alongX ? (b.minX + b.maxX) / 2 : (b.minY + b.maxY) / 2;
+  pour.pts = r.map(p => alongX ? [c + (p[0] - c) * k, p[1]] : [p[0], c + (p[1] - c) * k]).map(p => F.toLL(unrot(p, b.a)));
+}
+const unit = v => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; };
+/* polyline offset sideways by `off` feet (left = +), mitered at bends */
+function offsetPolyline(C, off) {
+  const n = C.length, out = [];
+  const nrm = i => { const d = unit([C[i + 1][0] - C[i][0], C[i + 1][1] - C[i][1]]); return [-d[1], d[0]]; };
+  for (let i = 0; i < n; i++) {
+    if (i === 0) { const a = nrm(0); out.push([C[0][0] + a[0] * off, C[0][1] + a[1] * off]); continue; }
+    if (i === n - 1) { const a = nrm(n - 2); out.push([C[i][0] + a[0] * off, C[i][1] + a[1] * off]); continue; }
+    const a = nrm(i - 1), b = nrm(i), m = unit([a[0] + b[0], a[1] + b[1]]);
+    const k = off / Math.max(0.35, m[0] * a[0] + m[1] * a[1]);
+    out.push([C[i][0] + m[0] * k, C[i][1] + m[1] * k]);
+  }
+  return out;
+}
+function measurePath(pour) {
+  const F = frame(pour.path);
+  const C = pour.path.map(F.toXY);
+  const w = pour.width || 4, t = pour.thick || 4;
+  const left = offsetPolyline(C, w / 2), right = offsetPolyline(C, -w / 2);
+  const xy = left.concat(right.slice().reverse());
+  pour.pts = xy.map(F.toLL);
+  const area = polyArea(xy), perim = polyPerim(xy);
+  const max = Math.min(t * 2.5, 15);
+  const nW = Math.max(1, Math.ceil(w / max - 1e-9)), pw = w / nW;
+  const target = Math.min(max, pw * 1.25);
+  const segLen = i => Math.hypot(C[i + 1][0] - C[i][0], C[i + 1][1] - C[i][1]);
+  const dir = i => unit([C[i + 1][0] - C[i][0], C[i + 1][1] - C[i][1]]);
+  const length = C.slice(0, -1).reduce((s, _, i) => s + segLen(i), 0);
+  /* split into straight-ish runs at bends sharper than 20 degrees */
+  const breaks = [0];
+  for (let i = 1; i < C.length - 1; i++) {
+    const a = dir(i - 1), b = dir(i);
+    if (Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1])) ) > 20 * Math.PI / 180) breaks.push(i);
+  }
+  breaks.push(C.length - 1);
+  const joints = [];
+  const cross = (P, d, half) => { const nn = [-d[1], d[0]]; return [[P[0] + nn[0] * half, P[1] + nn[1] * half], [P[0] - nn[0] * half, P[1] - nn[1] * half]]; };
+  let nL = 0;
+  for (let r = 0; r + 1 < breaks.length; r++) {
+    const i0 = breaks[r], i1 = breaks[r + 1];
+    let runLen = 0; for (let i = i0; i < i1; i++) runLen += segLen(i);
+    const n = Math.max(1, Math.round(runLen / target + 0.49));
+    nL += n;
+    for (let k = 1; k < n; k++) {
+      let s = runLen * k / n, i = i0;
+      while (i < i1 - 1 && s > segLen(i)) { s -= segLen(i); i++; }
+      const d = dir(i), P = [C[i][0] + d[0] * s, C[i][1] + d[1] * s];
+      joints.push(cross(P, d, w / 2));
+    }
+    if (r + 1 < breaks.length - 1) joints.push([left[i1], right[i1]]); /* miter joint at the bend */
+  }
+  for (let j = 1; j < nW; j++) { const o = offsetPolyline(C, -w / 2 + j * pw); for (let i = 0; i + 1 < o.length; i++) joints.push([o[i], o[i + 1]]); }
+  return {
+    area, perim, L: length, W: w, nW, nL, pw, pl: length / nL, max, rectish: true, isPath: true,
+    joints: joints.map(s => s.map(F.toLL)), panels: nL * nW,
+    cuft: area * t / 12, yd: area * t / 12 / 27, xy, frame: F, axis: Math.atan2(dir(0)[1], dir(0)[0])
+  };
+}
+
+/* =========================================================
+   SITE QUESTIONS -> recommendation + work plan
+   ========================================================= */
+const QUESTIONS = [
+  { k: 'job', label: 'What are we pouring?', why: 'Sets which areas you will outline on the map.', o: [['driveway', 'Driveway'], ['walkway', 'Walkway / sidewalk'], ['both', 'Both'], ['patio', 'Patio or pad']] },
+  { k: 'now', label: 'What is there now?', why: 'Decides tear-out, haul-away and how much digging comes first.', o: [['grass', 'Grass / dirt'], ['gravel', 'Gravel'], ['concrete', 'Old concrete'], ['asphalt', 'Asphalt']] },
+  { k: 'use', label: 'What will drive on it?', why: 'Sets slab thickness and base depth.', o: [['foot', 'Foot traffic only'], ['cars', 'Cars and SUVs'], ['heavy', 'RVs, trailers, work trucks']] },
+  { k: 'soil', label: 'How does the ground drain?', why: 'Soft or wet ground needs extra digging and fabric so the slab does not settle.', o: [['good', 'Drains well'], ['soft', 'Soft or wet spots'], ['unsure', 'Not sure']] },
+  { k: 'slope', label: 'How much slope?', why: 'Steep runs need a rougher finish and more form work.', o: [['flat', 'Flat'], ['gentle', 'Gentle'], ['steep', 'Steep']] },
+  { k: 'access', label: 'Can the mixer truck reach the pour?', why: 'If not, you need a pump truck or concrete buggies.', o: [['truck', 'Yes, chute reaches'], ['pump', 'No — pump needed'], ['buggy', 'No — buggies / wheelbarrows']] },
+  { k: 'tie', label: 'Does it connect to existing concrete?', why: 'Tie-ins get dowels or an expansion joint so the two slabs move together.', o: [['garage', 'Garage floor'], ['city', 'City sidewalk / apron'], ['none', 'Nothing']] }
+];
+const DEFAULT_ANSWERS = { job: 'both', now: 'grass', use: 'cars', soil: 'good', slope: 'gentle', access: 'truck', tie: 'none' };
+function recommend(A) {
+  const footOnly = A.job === 'walkway' || A.job === 'patio' || A.use === 'foot';
+  const thick = footOnly ? 4 : (A.use === 'heavy' ? 6 : 5);
+  let base = A.use === 'heavy' ? 6 : 4;
+  if (A.soil === 'soft') base += 2;
+  return { thick, base, dig: thick + base, footOnly };
+}
+function workPlan(A) {
+  const R = recommend(A);
+  const steps = [];
+  const add = (title, detail, tag, cls) => steps.push({ title, detail, tag: tag || '', cls: cls || '' });
+  add('Call 811 and mark utilities', 'Gas, water and cable lines are flagged before any digging. Free, and required by law.');
+  add('Site check', 'We confirm measurements, slope and soil on site before your start date.');
+  if (A.now === 'concrete') add('Break out and haul away old concrete', 'Saw-cut clean edges where we stop, break up the old slab and truck it off site.', 'Tear-out');
+  if (A.now === 'asphalt') add('Remove and haul away asphalt', 'Asphalt is broken up and hauled to a recycler.', 'Tear-out');
+  if (A.now === 'grass') add('Strip sod and topsoil', 'Grass and organic soil come out — they rot and settle under a slab.', 'Excavation');
+  if (A.now === 'gravel') add('Check and reuse existing gravel', 'Good gravel is regraded and topped up instead of hauled away, which saves you money.', 'Saves $', 'save');
+  add(`Excavate to ${R.dig}″ and grade`, `Room for ${R.base}″ of base plus the ${R.thick}″ slab, sloped about ¼″ per foot away from the house so water drains.`, 'Excavation');
+  if (A.soil === 'soft') add('Stabilize soft ground', 'Over-dig soft spots, lay geotextile fabric and add 2″ extra base so the slab will not sink.', 'Added', 'add');
+  if (A.soil === 'unsure') add('Check the ground', 'If soft or unsuitable soil turns up while digging, we show you and agree on a written change order before fixing it.', 'If needed', 'opt');
+  add(`Lay and compact ${R.base}″ gravel base`, 'Crushed stone compacted in layers with a plate compactor.', 'Base');
+  add('Set forms' + (A.slope === 'steep' ? ' and step-downs' : ''), 'Forms are set to finished height and slope.', 'Forms');
+  add('Place reinforcement' + (A.tie !== 'none' ? ' and tie-in' : ''),
+    'Rebar grid on chairs at mid-depth' + (A.tie === 'garage' ? '; steel dowels drilled into the garage slab so the two never separate' : (A.tie === 'city' ? '; expansion joint where it meets the city sidewalk' : '')) + '.', 'Rebar');
+  add('Pour', A.access === 'truck' ? 'Concrete is placed straight from the mixer truck chute.' : (A.access === 'pump' ? 'A pump truck places the concrete where the mixer cannot reach.' : 'Concrete is moved in by power buggy.'), A.access === 'truck' ? 'Concrete' : 'Added', A.access === 'truck' ? '' : 'add');
+  add('Finish and cut control joints', (A.slope === 'steep' ? 'Heavy broom finish for grip on the slope. ' : 'Finish and tooled edges. ') + 'Joints are saw-cut within 24 hours on the panel layout in this proposal, so cracks land in the joints, not across panels.', 'Labor');
+  add('Cure', 'The new concrete is cured so it gains full strength. You get written curing instructions for the first 7 days.', 'Included');
+  add('Protect while it cures', R.footOnly ? 'Walk on it once we give the OK, usually after 24–48 hours.' : 'Walk on it once we give the OK, usually after 24–48 hours. No cars or heavy loads for at least 7 days' + (A.use === 'heavy' ? ', heavy vehicles after 28 days' : '') + ', longer in cold weather.');
+  return steps;
+}
+
+/* =========================================================
+   ESTIMATE
+   ========================================================= */
+const FINISHES = [
+  { id: 'broom', name: 'Standard', desc: 'Broom finish', key: 'fin_broom', color: '#CBC7BE' },
+  { id: 'charcoal', name: 'Upgraded', desc: 'Charcoal tint — hides stains', key: 'fin_charcoal', color: '#7C7F84' },
+  { id: 'aggregate', name: 'Textured', desc: 'Exposed aggregate', key: 'fin_aggregate', color: '#B3A48E' },
+  { id: 'stamped', name: 'Premium', desc: 'Stamped slate pattern', key: 'fin_stamped', color: '#A88C74' }
+];
+function estimate(job, finishId) {
+  const P = S();
+  const A = Object.assign({}, DEFAULT_ANSWERS, job.answers || {});
+  const R = recommend(A);
+  const pours = (job.pours || []).map(p => ({ p, m: measurePour(p) })).filter(x => x.m);
+  const area = pours.reduce((s, x) => s + x.m.area, 0);
+  const perim = pours.reduce((s, x) => s + x.m.perim, 0);
+  const net = pours.reduce((s, x) => s + x.m.yd, 0);
+  const withWaste = net * (1 + P.waste / 100);
+  const step = P.roundYard > 0 ? P.roundYard : 0.01;
+  const order = net > 0 ? Math.ceil(withWaste / step - 1e-9) * step : 0;
+  const lines = [];
+  const L = (label, detail, amt, mat, cdetail) => { if (amt > 0.004) lines.push({ label, detail, amt, mat, cdetail }); };
+  let tons = area * (R.base / 12) / 27 * 1.1 * 1.4;
+  if (A.now === 'gravel') tons *= (1 - P.gravelReuse / 100);
+  const fin = FINISHES.find(f => f.id === (finishId || job.finish || 'broom')) || FINISHES[0];
+  if (P.pricingMode === 'sqft') {
+    pours.forEach(x => {
+      const t = x.p.thick || 4, r = sqftRate(P, t);
+      L(x.p.name, `${num(x.m.area)} sq ft × ${money(r, 2)} · ${t}″ installed`, x.m.area * r, false, `${num(x.m.area)} sq ft · ${t}″ · base, rebar and joints included`);
+    });
+    if (A.now === 'concrete') L('Tear-out & haul-away', `${num(area)} sq ft of old concrete`, area * P.demoConcreteSqft, false, `${num(area)} sq ft of old concrete`);
+    if (A.now === 'asphalt') L('Asphalt removal & haul-away', `${num(area)} sq ft`, area * P.demoAsphaltSqft, false, `${num(area)} sq ft`);
+    if (A.access === 'pump') L('Pump truck', '', P.pumpFee, false, '');
+    if (A.access === 'buggy') L('Buggy placement', `${num(area)} sq ft`, area * P.buggySqft, false, '');
+    if (P[fin.key] > 0) L(fin.desc + ' upgrade', `${num(area)} sq ft × ${money(P[fin.key], 2)}`, area * P[fin.key], false, `${num(area)} sq ft`);
+    /* cost = the sub's quoted price once entered (adjusted for a different finish tier), else your per-sq-ft costs */
+    const est = lines.reduce((s, l) => s + l.amt, 0);
+    const upg = f => P[f.key] > 0 ? area * P[f.key] : 0;
+    /* the sub's price and your customer price are each tied to the finish they were set for */
+    const byId = id => FINISHES.find(f => f.id === id) || FINISHES[0];
+    const quoted = byId(job.subFin || 'broom'), priceQ = byId(job.priceFin || 'broom');
+    const subP = +job.subPrice || 0;
+    const cost = subP > 0 ? subP + upg(fin) - upg(quoted) : est;
+    /* a per-job customer price (job.price) sets the quoted finish's total; other finishes keep the same ratio */
+    const costQ = subP > 0 ? subP + upg(priceQ) - upg(quoted) : est - upg(fin) + upg(priceQ);
+    const total = job.price > 0 && costQ > 0 ? Math.round(cost * job.price / costQ) : Math.round(cost * (1 + (P.sqftMarkupPct || 0) / 100));
+    const markup = total - cost;
+    /* customer sees the same items with your markup built in (no rates, no markup line) */
+    const k = est > 0 ? total / est : 0;
+    const custLines = lines.map(l => ({ label: l.label, detail: l.cdetail != null ? l.cdetail : '', amt: Math.round(l.amt * k) }));
+    if (custLines.length) custLines[custLines.length - 1].amt += total - custLines.reduce((s, l) => s + l.amt, 0);
+    const costLines = subP > 0 ? [{ label: 'Subcontractor price', detail: (job.sub && job.sub.name ? job.sub.name + ' · ' : '') + 'turnkey' + (fin.id !== quoted.id ? ` · adjusted for ${fin.desc.toLowerCase()}` : ''), amt: cost }] : lines;
+    return { A, R, pours, area, perim, net, order, tons, lines: costLines, custLines, sub: cost, cost, profit: total - cost, tax: 0, markup, total, fin, trucks: Math.max(1, Math.ceil(order / 10)), simple: true };
+  }
+  L('Ready-mix concrete', `${num(order, 2)} yd³ × ${money(P.priceYard)}`, order * P.priceYard, true);
+  if (order > 0 && order < P.shortLoadMin) L('Short-load fee', `order under ${P.shortLoadMin} yd³`, P.shortLoadFee, false);
+  if (A.access === 'pump') L('Pump truck', '', P.pumpFee, false);
+  if (A.access === 'buggy') L('Buggy placement', `${num(area)} sq ft`, area * P.buggySqft, false);
+  if (A.now === 'concrete') L('Tear-out & haul-away', `${num(area)} sq ft of old concrete`, area * P.demoConcreteSqft, false);
+  if (A.now === 'asphalt') L('Asphalt removal & haul-away', `${num(area)} sq ft`, area * P.demoAsphaltSqft, false);
+  if (A.now === 'grass') L('Strip sod & topsoil', `${num(area)} sq ft`, area * P.sodSqft, false);
+  L('Gravel base', `${num(tons, 1)} tons, ${R.base}″ compacted` + (A.now === 'gravel' ? ' (reusing existing)' : ''), tons * P.gravelTon, true);
+  if (A.soil === 'soft') L('Geotextile fabric', `${num(area)} sq ft`, area * P.fabricSqft, true);
+  L('Rebar grid', `${num(area)} sq ft, #3 @ 18″`, area * P.rebarSqft, true);
+  if (A.tie === 'garage') L('Tie-in dowels', 'drilled into garage slab', P.dowelFlat, true);
+  L('Forms', `${num(perim)} linear ft of edge`, perim * P.formsLf, true);
+  L('Labor', `${num(area)} sq ft × ${money(P.laborSqft, 2)}`, area * P.laborSqft, false);
+  if (P[fin.key] > 0) L(fin.desc + ' upgrade', `${num(area)} sq ft × ${money(P[fin.key], 2)}`, area * P[fin.key], false);
+  const sub = lines.reduce((s, l) => s + l.amt, 0);
+  const mat = lines.filter(l => l.mat).reduce((s, l) => s + l.amt, 0);
+  const tax = mat * P.taxPct / 100;
+  const markup = (sub + tax) * P.markupPct / 100;
+  const total = Math.round(sub + tax + markup);
+  return { A, R, pours, area, perim, net, order, tons, lines, sub, tax, markup, total, fin, trucks: Math.max(1, Math.ceil(order / 10)) };
+}
+/* installed $/sq ft for a thickness; thicknesses without a rate extend the 5″→6″ step */
+function sqftRate(P, t) {
+  const v = P['sqft' + t];
+  if (v > 0) return v;
+  const step = (P.sqft6 || 0) - (P.sqft5 || 0);
+  return (P.sqft6 || 0) + (t - 6) * step;
+}
+function tiers(job) { return FINISHES.map(f => ({ f, total: estimate(job, f.id).total })); }
+
+/* =========================================================
+   ROUTER
+   ========================================================= */
+let cleanup = null;
+function route() {
+  if (cleanup) { try { cleanup(); } catch (e) {} cleanup = null; }
+  const h = location.hash.replace(/^#\/?/, '');
+  const parts = h.split('/');
+  $('#nav-crm').classList.toggle('on', !h || parts[0] === 'job');
+  $('#nav-set').classList.toggle('on', parts[0] === 'settings');
+  window.scrollTo(0, 0);
+  if (parts[0] === 'settings') return renderSettings();
+  if (parts[0] === 'job' && getJob(parts[1])) return renderJob(getJob(parts[1]), parts[2] || 'questions');
+  renderCRM();
+}
+window.addEventListener('hashchange', route);
+
+/* =========================================================
+   HOME: ESTIMATE LIST
+   ========================================================= */
+function renderCRM() {
+  const q = (renderCRM.q || '').toLowerCase();
+  const jobs = DB.jobs.slice().sort((a, b) => (b.updated || 0) - (a.updated || 0))
+    .filter(j => !q || [j.name, j.address, j.proposalNo].join(' ').toLowerCase().includes(q));
+  $('#view').innerHTML = `
+  <div class="row" style="align-items:flex-end">
+    <div><h1 style="margin:0;font-size:28px">Estimates</h1><div class="muted small">Measure from the satellite, price it, print a proposal</div></div>
+    <div class="row" style="margin-left:auto">
+      ${DB.jobs.length > 6 ? `<input type="text" id="srch" placeholder="Search name or address" value="${esc(renderCRM.q || '')}" style="width:220px">` : ''}
+      <button class="btn" id="bk-exp">Back up data</button>
+      <label class="btn" style="cursor:pointer">Import / restore<input type="file" accept=".json" id="bk-imp" hidden></label>
+      <button class="btn primary" id="newlead">+ New estimate</button>
+    </div>
+  </div>
+  ${DB.jobs.length ? '' : `<div class="card" style="margin-top:16px"><b>Start here:</b> set your prices and company info under <a href="#/settings">Prices &amp; company</a>, then click <b>+ New estimate</b>, enter the address, answer the site questions, outline the pours on the satellite map, and save the proposal as a PDF.</div>`}
+  <div class="elist">
+    ${jobs.map(j => {
+      const E = (j.pours && j.pours.length) ? estimate(j) : null;
+      return `<a class="ecard" href="#/job/${j.id}/${E ? 'proposal' : 'questions'}">
+        <div class="thumb">${E ? sitePlanSVG(E) : '<span class="small muted">No pours drawn yet</span>'}</div>
+        <div class="body">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><b>${esc(j.name)}</b><b class="disp" style="font-size:17px">${E ? money(E.total) : ''}</b></div>
+          <div class="meta">${esc(j.address || 'No address yet')}</div>
+          <div class="meta">${E ? esc(projectTitle(j)) + ' · ' + num(E.area) + ' sq ft · ' : ''}No. ${esc(j.proposalNo || '')} · ${j.updated ? fmtDate(isoLocal(new Date(j.updated))) : ''}</div>
+        </div>
+      </a>`;
+    }).join('')}
+  </div>`;
+  hydrateSat($('#view'));
+  $('#newlead').onclick = () => leadModal();
+  $('#bk-exp').onclick = exportBackup;
+  $('#bk-imp').onchange = e => { importBackup(e.target.files[0]); e.target.value = ''; };
+  const s = $('#srch');
+  if (s) s.oninput = () => { renderCRM.q = s.value; const pos = s.selectionStart; renderCRM(); const n = $('#srch'); n.focus(); n.setSelectionRange(pos, pos); };
+}
+function nextProposalNo() { return String(DB.jobs.reduce((m, j) => Math.max(m, parseInt(j.proposalNo, 10) || 1000), 1000) + 1); }
+function leadModal(job) {
+  const j = job || {};
+  const bg = document.createElement('div'); bg.className = 'modal-bg';
+  bg.innerHTML = `<form class="modal" aria-label="Customer">
+    <h2 style="margin:0 0 12px">${job ? 'Edit customer' : 'New estimate'}</h2>
+    <div style="display:grid;gap:10px">
+      <label class="f">Customer name<input type="text" name="name" required value="${esc(j.name)}"></label>
+      <label class="f">Property address<input type="text" name="address" value="${esc(j.address)}" placeholder="Street, city, state"></label>
+      <div class="grid2"><label class="f">Phone<input type="tel" name="phone" value="${esc(j.phone)}"></label><label class="f">Email<input type="email" name="email" value="${esc(j.email)}"></label></div>
+      <label class="f">Notes<textarea name="notes">${esc(j.notes)}</textarea></label>
+    </div>
+    <div class="row" style="margin-top:16px;justify-content:flex-end">
+      ${job ? '<button type="button" class="btn danger" data-del style="margin-right:auto">Delete estimate</button>' : ''}
+      <button type="button" class="btn" data-x>Cancel</button><button class="btn primary">${job ? 'Save' : 'Create and start'}</button>
+    </div></form>`;
+  document.body.appendChild(bg);
+  const f = bg.querySelector('form');
+  f.elements.namedItem('name').focus();
+  const close = () => { bg.remove(); document.removeEventListener('keydown', onEsc); };
+  const onEsc = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onEsc);
+  bg.querySelector('[data-x]').onclick = close;
+  bg.onmousedown = e => { if (e.target === bg) close(); };
+  const del = bg.querySelector('[data-del]');
+  if (del) del.onclick = () => {
+    if (del.dataset.sure) { DB.jobs = DB.jobs.filter(x => x.id !== job.id); idb.del('before:' + job.id); idb.del('after:' + job.id); save(); close(); if (location.hash === '#/') route(); else location.hash = '#/'; toast('Estimate deleted'); }
+    else { del.dataset.sure = 1; del.textContent = 'Click again to delete for good'; }
+  };
+  f.onsubmit = e => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(f).entries());
+    if (job) { const addrChanged = d.address !== job.address; Object.assign(job, d, { updated: Date.now() }); if (addrChanged) { job.center = null; } save(); close(); route(); return; }
+    const nj = Object.assign({ id: uid(), created: Date.now(), updated: Date.now(), answers: Object.assign({}, DEFAULT_ANSWERS), pours: [], finish: 'broom', proposalNo: nextProposalNo() }, d);
+    DB.jobs.push(nj); save(); close();
+    location.hash = `#/job/${nj.id}/questions`;
+  };
+}
+function duplicateJob(job) {
+  const c = JSON.parse(JSON.stringify(job));
+  Object.assign(c, { id: uid(), name: job.name + ' (copy)', created: Date.now(), updated: Date.now(), proposalNo: nextProposalNo(), proposalDate: '', trace: [], photoFit: null });
+  c.pours.forEach(p => p.id = uid());
+  DB.jobs.push(c); save(); location.hash = `#/job/${c.id}/questions`; toast('Copied — photo not included');
+}
+async function exportBackup() {
+  /* photos ride along so a restore (or a single-estimate file) is complete */
+  const jobs = await Promise.all(DB.jobs.map(async j => {
+    const before = await idb.get('before:' + j.id), after = await idb.get('after:' + j.id);
+    return (before || after) ? Object.assign({}, j, { photos: { before, after } }) : j;
+  }));
+  const proof = {};
+  for (const ph of (DB.settings.proof || [])) { const d = await idb.get('proof:' + ph.id); if (d) proof[ph.id] = d; }
+  const logo = await idb.get('logo');
+  const blob = new Blob([JSON.stringify({ jobs, settings: DB.settings, proof, logo: logo || undefined })], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `slabcalc-backup-${today()}.json`; a.click();
+  toast('Backup downloaded');
+}
+function importBackup(file) {
+  if (!file) return;
+  /* merge: estimates are added or updated by id; prices/company only change if the file has them */
+  file.text().then(t => {
+    const d = JSON.parse(t); if (!Array.isArray(d.jobs)) { if (d.proof || d.settingsPatch || d.logo) d.jobs = []; else throw 0; }
+    if (typeof d.logo === 'string' && d.logo.startsWith('data:image/')) { LOGO = d.logo; idb.set('logo', d.logo); }
+    let added = 0, updated = 0;
+    d.jobs.forEach(j => { if (!j.proposalNo) j.proposalNo = nextProposalNo();
+      if (j.photos) { if (j.photos.before) idb.set('before:' + j.id, j.photos.before); if (j.photos.after) idb.set('after:' + j.id, j.photos.after); delete j.photos; } const i = DB.jobs.findIndex(x => x.id === j.id); if (i >= 0) { DB.jobs[i] = j; updated++; } else { DB.jobs.push(j); added++; } });
+    if (d.settings) DB.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings);
+    /* a setup file can fill in company details without touching prices */
+    if (d.settingsPatch && typeof d.settingsPatch === 'object') ['company', 'phone', 'email', 'license', 'freeCancel', 'dep1', 'dep2', 'dep3'].forEach(k => { if (k in d.settingsPatch) DB.settings[k] = d.settingsPatch[k]; });
+    if (d.proof) Object.entries(d.proof).forEach(([id, data]) => {
+      idb.set('proof:' + id, data);
+      /* a photos-only file adds to your proof photos without touching prices */
+      const P = DB.settings; P.proof = P.proof || [];
+      if (!d.settings && !P.proof.some(x => x.id === id)) P.proof.push({ id, caption: (d.proofCaptions || {})[id] || '' });
+    });
+    save(); route(); toast(`Imported: ${added} new, ${updated} updated` + (d.proof ? ` · ${Object.keys(d.proof).length} proof photos` : '') + (d.settingsPatch ? ' · company info updated' : '') + (d.settings ? ' · prices restored' : ''));
+  })
+    .catch(() => toast('That file is not a SlabCalc backup'));
+}
+
+/* =========================================================
+   JOB SHELL
+   ========================================================= */
+function renderJob(job, tab) {
+  const E = estimate(job);
+  const tabs = [['questions', '1 · Site questions'], ['map', '2 · Map & pours'], ['photo', '3 · Before / after'], ['proposal', '4 · Proposal'], ['sub', '5 · Sub request']];
+  $('#view').innerHTML = `
+  <div class="jobhead noprint">
+    <div style="flex:1;min-width:260px">
+      <a href="#/" class="small" style="text-decoration:none">← All estimates</a>
+      <h1 style="margin:2px 0 0;font-size:26px">${esc(job.name)}</h1>
+      <div class="muted small">${esc(job.address || 'No address')} ${job.phone ? ' · ' + esc(job.phone) : ''} ${job.email ? ' · ' + esc(job.email) : ''}</div>
+    </div>
+    <div class="row" style="align-self:center">
+      <button class="btn" id="editc">Edit customer</button>
+      <button class="btn" id="dupc" title="Start a new estimate from this one">Duplicate</button>
+    </div>
+    <div class="card" style="padding:10px 14px;min-width:180px"><div class="eyebrow">Estimate</div><div class="big" id="hdr-total">${E.pours.length ? money(E.total) : '—'}</div><div class="small" id="hdr-profit">${profitNote(E)}</div></div>
+  </div>
+  <nav class="steps noprint" aria-label="Estimate steps">${tabs.map(([id, n]) => `<a href="#/job/${job.id}/${id}" class="${tab === id ? 'on' : ''}">${n}</a>`).join('')}</nav>
+  <div id="tab"></div>`;
+  $('#editc').onclick = () => leadModal(job);
+  $('#dupc').onclick = () => duplicateJob(job);
+  if (tab === 'map') renderMapTab(job);
+  else if (tab === 'photo') renderPhotoTab(job);
+  else if (tab === 'proposal') renderProposal(job);
+  else if (tab === 'sub') renderSubRequest(job);
+  else renderQuestions(job);
+}
+function touch(job) { job.updated = Date.now(); save(); }
+function refreshHeaderTotal(job) { const el = $('#hdr-total'); if (el) { const E = estimate(job); el.textContent = E.pours.length ? money(E.total) : '—'; const pn = $('#hdr-profit'); if (pn) pn.innerHTML = profitNote(E); } }
+function profitNote(E) {
+  if (!E.simple || !E.pours.length) return '';
+  if (E.profit <= 0.5) return '<a href="#/settings" style="color:#B42318;font-weight:600">0% markup — no profit. Set it →</a>';
+  return `<span class="muted">Your profit ${money(E.profit)}</span>`;
+}
+
+/* =========================================================
+   TAB 1: QUESTIONS
+   ========================================================= */
+function renderQuestions(job) {
+  job.answers = Object.assign({}, DEFAULT_ANSWERS, job.answers || {});
+  const draw = () => {
+    const A = job.answers, R = recommend(A), steps = workPlan(A);
+    $('#tab').innerHTML = `<div class="split">
+      <section class="main" aria-label="Site questions">
+        <h2 style="margin:0 0 4px">A few questions before we measure</h2>
+        <p class="muted" style="margin:0 0 14px">Your answers set the thickness, base, prep work and line items — and build the plan your customer sees.</p>
+        ${QUESTIONS.map(q => `<fieldset class="q"><legend>${q.label}</legend><div class="why">${q.why}</div>
+          ${q.o.map(([v, n]) => `<button type="button" class="chip" aria-pressed="${A[q.k] === v}" data-k="${q.k}" data-v="${v}">${n}</button>`).join('')}</fieldset>`).join('')}
+        <label class="f" style="margin-top:6px">Site notes (private)<textarea id="snotes" placeholder="Gate code, dog, where the truck can park…">${esc(job.siteNotes)}</textarea></label>
+      </section>
+      <aside class="side card" aria-label="Work plan">
+        <div class="eyebrow">Recommended build</div>
+        <div class="grid3" style="margin:8px 0 14px">
+          <div style="background:var(--bg);border-radius:8px;padding:10px"><div class="small muted">Slab</div><b style="font-size:18px">${R.thick}″</b></div>
+          <div style="background:var(--bg);border-radius:8px;padding:10px"><div class="small muted">Gravel base</div><b style="font-size:18px">${R.base}″</b></div>
+          <div style="background:var(--bg);border-radius:8px;padding:10px"><div class="small muted">Dig depth</div><b style="font-size:18px">${R.dig}″</b></div>
+        </div>
+        <h3 style="margin:0">Work plan</h3>
+        <div class="small muted" style="margin-bottom:6px">Printed in the proposal so the customer knows exactly what happens, in order.</div>
+        <ol class="plan">${steps.map((s, i) => `<li><span class="n">${i + 1}</span><span style="flex:1"><b class="small">${s.title}</b><span class="small" style="display:block;color:#3C4047">${s.detail}</span></span>${s.tag ? `<span class="tag ${s.cls}">${s.tag}</span>` : ''}</li>`).join('')}</ol>
+        <a class="btn primary" style="width:100%;justify-content:center;margin-top:14px;height:46px" href="#/job/${job.id}/map">Next: outline the pours on the map →</a>
+      </aside></div>`;
+    document.querySelectorAll('.chip').forEach(b => b.onclick = () => {
+      const k = b.dataset.k, v = b.dataset.v;
+      const prevThick = recommend(job.answers).thick;
+      job.answers[k] = v;
+      const nt = recommend(job.answers).thick;
+      if (nt !== prevThick) (job.pours || []).forEach(p => { if (p.kind === 'driveway' && p.thick === prevThick) p.thick = nt; });
+      touch(job); refreshHeaderTotal(job); draw();
+    });
+    $('#snotes').onchange = e => { job.siteNotes = e.target.value; touch(job); };
+  };
+  draw();
+}
+
+/* =========================================================
+   TAB 2: MAP & POURS
+   ========================================================= */
+const KIND = { driveway: { name: 'Driveway', color: '#E06A12' }, walkway: { name: 'Walkway', color: '#2F6FE0' }, patio: { name: 'Patio / pad', color: '#2F8F5B' } };
+function renderMapTab(job) {
+  if (typeof L === 'undefined') { $('#tab').innerHTML = '<div class="card">The map needs an internet connection to load. Connect and reload.</div>'; return; }
+  $('#tab').innerHTML = `<div class="split">
+    <section class="main">
+      <div class="maptools">
+        <form id="geo" class="row" style="flex:1 1 360px">
+          <input type="text" id="addr" value="${esc(job.address)}" placeholder="Property address" style="flex:1;min-width:200px" aria-label="Property address">
+          <button class="btn dark">Find</button>
+        </form>
+        <button class="btn primary" data-draw="driveway">+ Driveway</button>
+        <button class="btn" data-draw="walkway" style="border-color:#2F6FE0">+ Walkway</button>
+        <button class="btn" data-draw="patio" style="border-color:#2F8F5B">+ Patio / pad</button>
+        <button class="btn" id="viewtog" aria-pressed="true" title="Show pours as finished concrete or as colored outlines">Concrete view</button>
+      </div>
+      <div style="position:relative">
+        <div id="map"></div>
+        <div id="drawhint" class="hint" style="position:absolute;left:56px;top:12px;right:12px;z-index:900;display:none;max-width:560px"></div>
+      </div>
+      <div class="small muted" style="margin-top:6px">Satellite imagery is good to about ±1 ft. Zoom all the way in. Driveways and patios: click each corner, then click the first point (or Finish). Walkways: click along the middle of the walk, then set the width. Drag the white dots to adjust.</div>
+    </section>
+    <aside class="side" id="panel"></aside></div>`;
+
+  const map = L.map('map', { zoomControl: true, maxZoom: 22 });
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 22, maxNativeZoom: 19, attribution: 'Imagery © Esri, Maxar, Earthstar Geographics'
+  }).addTo(map);
+  L.control.scale({ imperial: true, metric: false }).addTo(map);
+  if (job.center) map.setView(job.center, job.zoom || 20);
+  else if (job.pours && job.pours.length) map.fitBounds(L.latLngBounds(job.pours.flatMap(p => p.pts)), { maxZoom: 20 });
+  else { map.setView([39.77, -86.16], 12); if (job.address) geocode(job.address); }
+  setTimeout(() => map.invalidateSize(), 50);
+  map.on('moveend', () => { job.center = [map.getCenter().lat, map.getCenter().lng]; job.zoom = map.getZoom(); save(); });
+
+  const layer = L.layerGroup().addTo(map);
+  const vtxLayer = L.layerGroup().addTo(map);
+  let selId = job.pours && job.pours[0] ? job.pours[0].id : null;
+  let drawing = null; // {kind, pts, line, marks, path}
+  let concrete = true; // show pours as finished concrete panels
+
+  async function geocode(q) {
+    try {
+      const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=' + encodeURIComponent(q));
+      const d = await r.json();
+      if (!d.length) { toast('Address not found — pan to it by hand'); return; }
+      map.setView([+d[0].lat, +d[0].lon], 20);
+      L.circleMarker([+d[0].lat, +d[0].lon], { radius: 6, color: '#fff', fillColor: '#C2560C', fillOpacity: 1, weight: 2 }).addTo(map).bindTooltip('Address match', { direction: 'top' });
+    } catch (e) { toast('Address search unavailable — pan to it by hand'); }
+  }
+  $('#geo').onsubmit = e => { e.preventDefault(); const a = $('#addr').value.trim(); if (!a) return; if (a !== job.address) { job.address = a; touch(job); } geocode(a); };
+
+  function drawPours() {
+    layer.clearLayers(); vtxLayer.clearLayers();
+    (job.pours || []).forEach(p => {
+      const m = measurePour(p); if (!m) return;
+      const c = KIND[p.kind].color, on = p.id === selId;
+      const fin = FINISHES.find(f => f.id === job.finish) || FINISHES[0];
+      const poly = concrete
+        ? L.polygon(p.pts, { color: on ? '#fff' : c, weight: on ? 3 : 2, fillColor: fin.color, fillOpacity: 0.92 }).addTo(layer)
+        : L.polygon(p.pts, { color: on ? '#fff' : c, weight: on ? 3 : 2, fillColor: c, fillOpacity: on ? 0.45 : 0.32 }).addTo(layer);
+      const pick = () => { if (!drawing && selId !== p.id) { selId = p.id; drawPours(); drawPanel(); } };
+      poly.on('click', pick);
+      /* thin walks are hard to hit: an invisible wide line along the path selects them too */
+      if (p.path) L.polyline(p.path, { weight: 28, opacity: 0, color: '#000' }).on('click', pick).addTo(layer);
+      const jl = m.joints.map(seg => L.polyline(seg, concrete ? { color: '#3B3D40', weight: 2, opacity: 0.85, interactive: false } : { color: '#fff', weight: 2, dashArray: '6 5', interactive: false }).addTo(layer));
+      if (p.path && on && !drawing) L.polyline(p.path, { color: '#fff', weight: 1, opacity: 0.6, dashArray: '2 4', interactive: false }).addTo(layer);
+      const label = `<b>${esc(p.name)}</b><br>${m.isPath ? num(m.L) + ' ft long × ' + num(m.W, 1) + ' ft wide' : num(m.L) + ' × ' + num(m.W) + ' ft'} · ${num(m.area)} sq ft<br>${m.panels} panels · ${p.thick}″ · ${num(m.yd, 2)} yd³`;
+      const small = m.W < 8 || m.isPath;
+      /* thin pieces: label on hover only, so it never covers the dots you need to grab */
+      poly.bindTooltip(label, { permanent: !small && (on || !concrete), sticky: small, direction: small ? 'top' : 'center', offset: small ? [0, -18] : [0, 0], className: 'plabel' });
+      if (on && !drawing) {
+        const src = p.path || p.pts, minPts = p.path ? 2 : 3;
+        const live = () => { const mm = measurePour(p); poly.setLatLngs(p.pts); jl.forEach(l => layer.removeLayer(l)); jl.length = 0; if (mm) mm.joints.forEach(seg => jl.push(L.polyline(seg, { color: concrete ? '#3B3D40' : '#fff', weight: 2, interactive: false }).addTo(layer))); };
+        if (!p.path) m.xy.forEach((a, i) => { const b = m.xy[(i + 1) % m.xy.length], len = Math.hypot(b[0] - a[0], b[1] - a[1]); if (len < 1.5) return; L.marker(m.frame.toLL([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]), { interactive: false, keyboard: false, icon: L.divIcon({ className: '', iconSize: [0, 0], html: `<span class="elabel">${num(len, 1)} ft</span>` }) }).addTo(vtxLayer); });
+        src.forEach((pt, i) => {
+          const mk = L.marker(pt, { draggable: true, title: 'Drag to move · right-click to delete', icon: L.divIcon({ className: '', html: '<div class="vhit"><div class="vtx"></div></div>', iconSize: [32, 32], iconAnchor: [16, 16] }) }).addTo(vtxLayer);
+          mk.on('drag', ev => { src[i] = [ev.latlng.lat, ev.latlng.lng]; live(); });
+          const resq = () => { if (p.square && !p.path) p.pts = squarePts(p.pts); };
+          mk.on('dragend', () => { resq(); touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); });
+          mk.on('contextmenu', () => { if (src.length > minPts) { src.splice(i, 1); resq(); touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); } });
+        });
+        /* + handles between points: click to add a corner (or a bend in a walk) there */
+        const segs = p.path ? src.length - 1 : src.length;
+        for (let i = 0; i < segs; i++) {
+          const a = src[i], b = src[(i + 1) % src.length];
+          const t = p.path ? 0.5 : 0.3; /* off-centre on polygons so it doesn't sit on the side-length label */
+          const mid = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+          if (map.latLngToContainerPoint(a).distanceTo(map.latLngToContainerPoint(b)) < 40) continue;
+          L.marker(mid, { title: 'Click to add a point here', icon: L.divIcon({ className: '', html: '<div class="vmid"><span>+</span></div>', iconSize: [24, 24], iconAnchor: [12, 12] }) })
+            .on('click', () => { src.splice(i + 1, 0, mid); if (!p.path) p.square = false; touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); }).addTo(vtxLayer);
+        }
+        /* drag the dark handle to move the whole pour */
+        const cLL = p.path ? p.path[Math.floor((p.path.length - 1) / 2)].map((v, k) => (v + p.path[Math.ceil((p.path.length - 1) / 2)][k]) / 2) : m.frame.toLL([m.xy.reduce((t, v) => t + v[0], 0) / m.xy.length, m.xy.reduce((t, v) => t + v[1], 0) / m.xy.length]);
+        let orig = null;
+        L.marker(cLL, { draggable: true, title: 'Drag to move this pour', icon: L.divIcon({ className: '', html: '<div class="vmove">✥</div>', iconSize: [34, 34], iconAnchor: [17, -34] }) })
+          .on('dragstart', ev => { orig = { ll: ev.target.getLatLng(), pts: p.pts.map(v => v.slice()), path: p.path ? p.path.map(v => v.slice()) : null }; vtxLayer.eachLayer(l => { if (l !== ev.target) vtxLayer.removeLayer(l); }); })
+          .on('drag', ev => { const d = [ev.latlng.lat - orig.ll.lat, ev.latlng.lng - orig.ll.lng]; if (orig.path) { p.path = orig.path.map(v => [v[0] + d[0], v[1] + d[1]]); } p.pts = orig.pts.map(v => [v[0] + d[0], v[1] + d[1]]); live(); })
+          .on('dragend', () => { touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); })
+          .addTo(vtxLayer);
+      }
+    });
+  }
+
+  function startDraw(kind) {
+    cancelDraw();
+    map.doubleClickZoom.disable();
+    drawing = { kind, path: kind === 'walkway', pts: [], line: L.polyline([], { color: KIND[kind].color, weight: 3, dashArray: '4 4' }).addTo(map), marks: L.layerGroup().addTo(map) };
+    vtxLayer.clearLayers();
+    $('#drawhint').style.display = 'block';
+    hint();
+  }
+  function hint() {
+    const n = drawing.pts.length, need = drawing.path ? 2 : 3;
+    $('#drawhint').innerHTML = (drawing.path
+      ? `Drawing a <b>walkway</b>: click along the <b>middle</b> of the walk, end to end, with a click at each bend (${n} so far). Set the width after. `
+      : `Drawing a <b>${KIND[drawing.kind].name.toLowerCase()}</b>: click each corner (${n} so far). `) +
+      `<div style="margin-top:6px;font-size:12.5px;opacity:.85">${drawing.path ? 'To finish: double-click the last point, click it again, press Enter, or' : 'To finish: click the first point, press Enter, or'}</div><button class="btn sm primary" id="dfin" ${n < need ? 'disabled' : ''} style="margin-top:6px">✓ Finish</button> <button class="btn sm" id="dundo" ${n ? '' : 'disabled'}>Undo</button> <button class="btn sm" id="dcan">Cancel</button>`;
+    $('#dfin').onclick = finishDraw; $('#dundo').onclick = undoPt; $('#dcan').onclick = cancelDraw;
+  }
+  function undoPt() { drawing.pts.pop(); drawing.line.setLatLngs(drawing.pts); drawing.marks.clearLayers(); drawing.pts.forEach(pt => L.circleMarker(pt, { radius: 5, color: '#fff', fillColor: KIND[drawing.kind].color, fillOpacity: 1, weight: 2 }).addTo(drawing.marks)); hint(); }
+  function cancelDraw() {
+    if (!drawing) return;
+    map.removeLayer(drawing.line); map.removeLayer(drawing.marks); drawing = null;
+    map.doubleClickZoom.enable(); $('#drawhint').style.display = 'none'; drawPours();
+  }
+  function finishDraw() {
+    if (!drawing) return;
+    /* double-clicks and repeat clicks leave stacked points: drop any within a few pixels of the previous one */
+    drawing.pts = drawing.pts.filter((pt, i, a) => i === 0 || map.latLngToContainerPoint(pt).distanceTo(map.latLngToContainerPoint(a[i - 1])) > 6);
+    if (drawing.pts.length < (drawing.path ? 2 : 3)) { hint(); return; }
+    const A = Object.assign({}, DEFAULT_ANSWERS, job.answers);
+    const kind = drawing.kind;
+    const count = job.pours.filter(p => p.kind === kind).length;
+    const p = { id: uid(), kind, name: KIND[kind].name + (count ? ' ' + (count + 1) : ''), pts: drawing.pts.slice(), thick: kind === 'driveway' ? recommend(A).thick : 4 };
+    if (drawing.path) { p.path = drawing.pts.slice(); p.width = 4; measurePour(p); }
+    else { p.square = true; p.pts = squarePts(p.pts); }
+    job.pours.push(p); selId = p.id;
+    cancelDraw(); touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job);
+  }
+  map.on('click', e => {
+    if (!drawing) return;
+    const pt = [e.latlng.lat, e.latlng.lng];
+    const here = map.latLngToContainerPoint(e.latlng);
+    if (!drawing.path && drawing.pts.length >= 3 && map.latLngToContainerPoint(drawing.pts[0]).distanceTo(here) < 14) { finishDraw(); return; }
+    if (drawing.path && drawing.pts.length >= 2 && map.latLngToContainerPoint(drawing.pts[drawing.pts.length - 1]).distanceTo(here) < 14) { finishDraw(); return; }
+    drawing.pts.push(pt);
+    drawing.line.setLatLngs(drawing.pts);
+    L.circleMarker(pt, { radius: 5, color: '#fff', fillColor: KIND[drawing.kind].color, fillOpacity: 1, weight: 2 }).addTo(drawing.marks);
+    hint();
+  });
+  const onKey = e => { if (!drawing) return; if (e.key === 'Escape') cancelDraw(); if (e.key === 'Enter') finishDraw(); if ((e.key === 'z' && (e.metaKey || e.ctrlKey)) || e.key === 'Backspace') { if (document.activeElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return; e.preventDefault(); undoPt(); } };
+  document.addEventListener('keydown', onKey);
+  map.on('dblclick', () => { if (drawing) finishDraw(); });
+  cleanup = () => { document.removeEventListener('keydown', onKey); map.remove(); };
+  document.querySelectorAll('[data-draw]').forEach(b => b.onclick = () => startDraw(b.dataset.draw));
+  $('#viewtog').onclick = () => { concrete = !concrete; $('#viewtog').setAttribute('aria-pressed', concrete); drawPours(); };
+
+  function drawPanel() {
+    const E = estimate(job);
+    const sel = job.pours.find(p => p.id === selId);
+    const m = sel ? measurePour(sel) : null;
+    const A = E.A, R = E.R;
+    let advice = '';
+    if (sel) {
+      if (sel.kind === 'driveway') advice = sel.thick < 5 ? ['warn', '4″ is the minimum for cars only. Most driveways are poured at 5″ for a longer life.'] : sel.thick === 5 ? ['ok', '5″ — right for cars, SUVs and light pickups.'] : ['ok', sel.thick + '″ — for RVs, trailers and work trucks.'];
+      else advice = sel.thick === 4 ? ['ok', '4″ — standard for foot traffic.'] : ['ok', sel.thick + '″ — thicker than foot traffic needs unless carts or vehicles cross it.'];
+    }
+    $('#panel').innerHTML = `
+      <div class="card" style="margin-bottom:12px">
+        <div class="eyebrow">Estimated price</div>
+        <div class="huge">${E.pours.length ? money(E.total) : '—'}</div>
+        <div class="small muted">${E.area ? money(E.total / E.area, 2) + ' per sq ft · ' : ''}${num(E.area)} sq ft · order ${num(E.order, 2)} yd³${E.order ? ' · ' + E.trucks + ' truck' + (E.trucks > 1 ? 's' : '') : ''}</div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="eyebrow" style="margin-bottom:8px">Pours</div>
+        <div class="pourlist">${job.pours.length ? job.pours.map(p => { const pm = measurePour(p); return `<button data-sel="${p.id}" class="${p.id === selId ? 'on' : ''}"><span class="dot" style="background:${KIND[p.kind].color}"></span><span style="flex:1"><b>${esc(p.name)}</b> <span class="small muted">${pm ? num(pm.area) + ' sq ft · ' + p.thick + '″' : ''}</span></span></button>`; }).join('') : '<div class="small muted">No pours yet. Use + Driveway / + Walkway above, then click the corners on the map.</div>'}</div>
+        ${sel && m ? `
+        <div style="border-top:1px solid var(--line);margin-top:6px;padding-top:12px;display:grid;gap:12px">
+          <div class="grid2">
+            <label class="f">Name<input type="text" id="pname" value="${esc(sel.name)}"></label>
+            <label class="f">Type<select id="pkind">${Object.entries(KIND).map(([k, v]) => `<option value="${k}" ${sel.kind === k ? 'selected' : ''}>${v.name}</option>`).join('')}</select></label>
+          </div>
+          <div>
+            <div class="f" style="font-size:12px;color:var(--muted);font-weight:600;margin-bottom:6px">Slab thickness</div>
+            <div class="row" role="group" aria-label="Thickness">${[4, 5, 6, 8].map(t => `<button class="btn" style="flex:1;justify-content:center" aria-pressed="${sel.thick === t}" data-t="${t}">${t}″</button>`).join('')}</div>
+            <div class="small" style="margin-top:8px;padding:8px 10px;border-radius:6px;${advice[0] === 'warn' ? 'background:#FDECEC;color:#8A1F1F' : 'background:#EEF4EC;color:#2B4A25'}">${advice[1]}</div>
+          </div>
+          ${!sel.path ? `<div>
+            <div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="f" style="font-size:12px;color:var(--muted);font-weight:600">Exact size</span>
+              <button class="btn sm" id="psq" aria-pressed="${!!sel.square}" title="Snap near-square corners to exactly 90°. Angled ends stay angled.">${sel.square ? '✓ Square corners' : 'Square corners'}</button></div>
+            <div class="grid2"><label class="f">Length (ft)<input type="number" id="plen" min="1" step="0.1" value="${m.L.toFixed(1)}"></label><label class="f">Width (ft)<input type="number" id="pwid" min="1" step="0.1" value="${m.W.toFixed(1)}"></label></div>
+            <div class="small muted" style="margin-top:4px">Type a size to set it exactly — the slab stays centred where you drew it.</div>
+          </div>` : ''}
+          ${sel.path ? `<div>
+            <div class="f" style="font-size:12px;color:var(--muted);font-weight:600;margin-bottom:6px">Walk width</div>
+            <div class="row" role="group" aria-label="Width">${[3, 4, 5, 6].map(w => `<button class="btn" style="flex:1;justify-content:center" aria-pressed="${(sel.width || 4) === w}" data-w="${w}">${w} ft</button>`).join('')}
+              <input type="number" id="pwidth" min="2" max="20" step="0.5" value="${sel.width || 4}" style="width:70px" aria-label="Custom width (ft)"></div>
+          </div>` : ''}
+          <div class="grid3 small" style="background:var(--bg);border-radius:8px;padding:10px">
+            <div><div class="muted">${m.isPath ? 'Length × width' : 'Size'}</div><b>${num(m.L, 1)} × ${num(m.W, 1)} ft</b></div>
+            <div><div class="muted">Area</div><b>${num(m.area)} sq ft</b></div>
+            <div><div class="muted">Volume</div><b>${num(m.yd, 2)} yd³</b></div>
+          </div>
+          <div class="row small" style="border:1px solid var(--line);border-radius:8px;padding:10px;align-items:flex-start;flex-wrap:nowrap">
+            <svg width="36" height="36" viewBox="0 0 40 40" aria-hidden="true" style="flex:none"><rect x="4" y="4" width="32" height="32" fill="#E4E2DD" stroke="#5B6068" stroke-width="1.5"/><path d="M4 15 H36 M4 26 H36 M20 4 V36" stroke="#5B6068" stroke-width="1.5" stroke-dasharray="3 2"/></svg>
+            <div><b>${m.rectish ? '' : '≈'}${m.panels} panels, about ${num(m.pw, 1)} × ${num(m.pl, 1)} ft</b><div class="muted">Control joints ${sel.thick / 4}″ deep (¼ of the slab), no more than ${num(m.max, 1)} ft apart (2.5 × thickness). Panels kept near-square so cracks land in the joints.</div></div>
+          </div>
+          <div class="xs small">
+            <div class="stack">
+              <div style="height:${sel.thick * 10}px;background:#BDBAB3;position:relative"><div style="position:absolute;left:8px;right:8px;top:50%;border-top:2px dashed #6E3A10"></div></div>
+              <div style="height:${R.base * 8}px;background:#A89E8C"></div><div style="height:28px;background:#7A6450"></div>
+            </div>
+            <div style="display:flex;flex-direction:column;justify-content:space-between">
+              <div><b>${sel.thick}″ concrete</b> — 4,000 PSI air-entrained</div>
+              <div><b>Rebar grid</b> — #3 @ 18″, on chairs at mid-depth</div>
+              <div><b>${R.base}″ gravel base</b> — compacted crushed stone</div>
+              <div class="muted">Compacted subgrade</div>
+            </div>
+          </div>
+          <div class="row"><button class="btn sm danger" id="pdel">Delete this pour</button><span class="small muted">${sel.path ? 'Drag the dots along the middle of the walk. Right-click a dot to remove it.' : 'Right-click a dot to remove a corner.'}</span></div>
+        </div>` : ''}
+      </div>
+      ${E.pours.length ? `<div class="card">
+        <div class="eyebrow" style="margin-bottom:4px">${E.simple ? 'Your cost and price (not shown to the customer)' : 'Cost breakdown'}</div>
+        <table class="lines">${E.lines.map(l => `<tr><td>${l.label}<div class="d">${l.detail}</div></td><td class="r">${money(l.amt)}</td></tr>`).join('')}
+          ${E.tax > 0 ? `<tr><td>Sales tax<div class="d">${S().taxPct}% on materials</div></td><td class="r">${money(E.tax)}</td></tr>` : ''}
+          ${E.markup > 0 ? `<tr><td>${E.simple ? 'Your markup' : 'Overhead &amp; profit'}<div class="d">${E.simple ? S().sqftMarkupPct : S().markupPct}%${E.simple ? ' · built into the customer’s prices' : ' markup'}</div></td><td class="r">${money(E.markup)}</td></tr>` : ''}
+          <tr><td><b>${E.simple ? 'Customer price' : 'Total'}</b></td><td class="r"><b>${money(E.total)}</b></td></tr></table>
+        <div class="small muted" style="margin-top:6px">Unit prices come from <a href="#/settings">Prices &amp; company</a>.</div>
+        <a class="btn primary" style="width:100%;justify-content:center;margin-top:12px;height:46px" href="#/job/${job.id}/photo">Next: before / after →</a>
+      </div>` : ''}`;
+    document.querySelectorAll('[data-sel]').forEach(b => b.onclick = () => {
+      selId = b.dataset.sel; const p = job.pours.find(x => x.id === selId);
+      drawPours(); drawPanel(); if (p) map.fitBounds(L.latLngBounds(p.pts), { maxZoom: 21, padding: [60, 60] });
+    });
+    if (sel) {
+      $('#pname').onchange = e => { sel.name = e.target.value || KIND[sel.kind].name; touch(job); drawPours(); drawPanel(); };
+      $('#pkind').onchange = e => { sel.kind = e.target.value; if (sel.kind !== 'walkway' && sel.path) { delete sel.path; delete sel.width; } touch(job); drawPours(); drawPanel(); };
+      document.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { sel.thick = +b.dataset.t; touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); });
+      const setW = w => { if (!(w >= 2 && w <= 20)) return; sel.width = w; measurePour(sel); touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); };
+      document.querySelectorAll('[data-w]').forEach(b => b.onclick = () => setW(+b.dataset.w));
+      const pw = $('#pwidth'); if (pw) pw.onchange = () => setW(parseFloat(pw.value));
+      const redraw = () => { touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); };
+      const sq = $('#psq'); if (sq) sq.onclick = () => { sel.square = !sel.square; if (sel.square) sel.pts = squarePts(sel.pts); redraw(); };
+      [['plen', 'length'], ['pwid', 'width']].forEach(([id, w]) => { const el = $('#' + id); if (el) el.onchange = () => { const v = parseFloat(el.value); if (v > 0 && v < 1000) { if (sel.square) sel.pts = squarePts(sel.pts); setPourDim(sel, w, v); redraw(); } }; });
+      const del = $('#pdel');
+      if (del) del.onclick = () => {
+        if (!del.dataset.sure) { del.dataset.sure = 1; del.textContent = 'Click again to delete'; return; }
+        job.pours = job.pours.filter(p => p.id !== sel.id); selId = job.pours[0] ? job.pours[0].id : null; touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job);
+      };
+    }
+  }
+  drawPours(); drawPanel();
+}
+
+/* =========================================================
+   TAB 3: BEFORE / AFTER
+   The measured plan is projected onto the street photo with a homography fitted to
+   4 corners of one slab, so the "after" shows the real shapes, panels and joints.
+   ========================================================= */
+function solveHomography(src, dst) {
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = src[i], [u, v] = dst[i];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+  }
+  for (let c = 0; c < 8; c++) {
+    let piv = c; for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[piv][c])) piv = r;
+    if (Math.abs(A[piv][c]) < 1e-12) return null;
+    [A[c], A[piv]] = [A[piv], A[c]]; [b[c], b[piv]] = [b[piv], b[c]];
+    for (let r = 0; r < 8; r++) if (r !== c) { const f = A[r][c] / A[c][c]; for (let k = c; k < 8; k++) A[r][k] -= f * A[c][k]; b[r] -= f * b[c]; }
+  }
+  return b.map((v, i) => v / A[i][i]).concat([1]);
+}
+const shoelace = q => q.reduce((s, p, i) => { const n = q[(i + 1) % q.length]; return s + p[0] * n[1] - n[0] * p[1]; }, 0) / 2;
+function rectCorners(xy) { const b = obb(xy); return [[b.minX, b.minY], [b.maxX, b.minY], [b.maxX, b.maxY], [b.minX, b.maxY]].map(p => unrot(p, b.a)); }
+function seeded(str) { let s = 7; for (const ch of String(str)) s = (s * 31 + ch.charCodeAt(0)) | 0; return () => { s = (s * 1664525 + 1013904223) | 0; return (s >>> 0) / 4294967296; }; }
+/* every pour in one shared plan frame (feet) */
+function photoPlan(job) {
+  const E = estimate(job);
+  if (!E.pours.length) return null;
+  const F = frame(E.pours.flatMap(x => x.p.pts));
+  return { E, pours: E.pours.map(x => ({ p: x.p, m: x.m, xy: x.p.pts.map(F.toXY), joints: x.m.joints.map(s => s.map(F.toXY)) })) };
+}
+function defaultRef(plan) {
+  const d = plan.pours.filter(x => x.p.kind === 'driveway');
+  return (d.length ? d : plan.pours).slice().sort((a, b) => b.m.area - a.m.area)[0];
+}
+/* returns project(p) -> [x,y] in canvas px, or null when the point is behind the camera */
+function fitProjector(fit, plan, W, H, rot) {
+  const ref = plan.pours.find(x => x.p.id === fit.ref) || defaultRef(plan);
+  const Pc = rectCorners(ref.xy);
+  let I = fit.pts.map(q => [q[0] * W, q[1] * H]);
+  if (shoelace(I) > 0) I = [I[0], I[3], I[2], I[1]]; /* plan is CCW; a non-mirrored view is CW in screen coords */
+  const r = rot == null ? (fit.rot || 0) : rot;
+  const dst = [0, 1, 2, 3].map(i => I[(i + r) % 4]);
+  const h = solveHomography(Pc, dst); if (!h) return null;
+  const c = Pc.reduce((s, p) => [s[0] + p[0] / 4, s[1] + p[1] / 4], [0, 0]);
+  const sg = Math.sign(h[6] * c[0] + h[7] * c[1] + h[8]) || 1;
+  const pr = p => { const w = h[6] * p[0] + h[7] * p[1] + h[8]; return w * sg > 1e-9 ? [(h[0] * p[0] + h[1] * p[1] + h[2]) / w, (h[3] * p[0] + h[4] * p[1] + h[5]) / w] : null; };
+  pr.ref = ref; pr.Pc = Pc; pr.dst = dst;
+  return pr;
+}
+/* pick the rotation where the slab's long sides run into the picture (a street photo looks up the
+   driveway) and every pour stays in front of the camera and near the frame */
+function bestRotation(fit, plan, W, H) {
+  let best = 0, bestScore = Infinity;
+  for (let r = 0; r < 4; r++) {
+    const pr = fitProjector(fit, plan, W, H, r); if (!pr) continue;
+    const e = [0, 1, 2, 3].map(i => { const a = pr.Pc[i], b = pr.Pc[(i + 1) % 4], A = pr.dst[i], B = pr.dst[(i + 1) % 4]; return { plan: Math.hypot(b[0] - a[0], b[1] - a[1]), vert: Math.abs(B[1] - A[1]) / (Math.hypot(B[0] - A[0], B[1] - A[1]) || 1) }; });
+    const longest = Math.max(...e.map(x => x.plan));
+    const longSides = e.filter(x => x.plan > longest * 0.8);
+    let score = -3 * longSides.reduce((s, x) => s + x.vert, 0) / longSides.length;
+    plan.pours.forEach(pp => pp.xy.forEach(p => { const q = pr(p); if (!q) score += 5; else if (q[0] < -0.5 * W || q[0] > 1.5 * W || q[1] < -0.5 * H || q[1] > 1.5 * H) score += 0.5; }));
+    if (score < bestScore - 1e-9) { bestScore = score; best = r; }
+  }
+  return best;
+}
+/* paint one pour as finished concrete, in perspective */
+function paintConcrete(ctx, img, pp, pr, fin, fast) {
+  const P = pp.xy.map(pr); if (P.some(q => !q)) return false;
+  const W = ctx.canvas.width, H = ctx.canvas.height;
+  const path = () => { ctx.beginPath(); P.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath(); };
+  const seg = (a, b) => { const A = pr(a), B = pr(b); if (A && B) { ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); } };
+  const b = obb(pp.xy), longX = (b.maxX - b.minX) >= (b.maxY - b.minY);
+  const at = (u, v) => unrot(longX ? [u, v] : [v, u], b.a); /* u along the slab, v across */
+  const [u0, u1, v0, v1] = longX ? [b.minX, b.maxX, b.minY, b.maxY] : [b.minY, b.maxY, b.minX, b.maxX];
+  const c = pp.xy.reduce((s, p) => [s[0] + p[0] / pp.xy.length, s[1] + p[1] / pp.xy.length], [0, 0]);
+  const c0 = pr(c), c1 = pr([c[0] + 1, c[1]]), c2 = pr([c[0], c[1] + 1]);
+  const pxft = c0 && c1 && c2 ? (Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) + Math.hypot(c2[0] - c0[0], c2[1] - c0[1])) / 2 : 10;
+  const rnd = seeded(pp.p.id + fin.id);
+  ctx.save(); path(); ctx.clip();
+  ctx.globalAlpha = 0.94; ctx.fillStyle = fin.color; ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
+  if (!fast) {
+    if (fin.id === 'broom' || fin.id === 'charcoal') {
+      const step = Math.max(0.25, (u1 - u0) / 400);
+      ctx.strokeStyle = 'rgba(0,0,0,0.07)'; ctx.lineWidth = 1; ctx.beginPath();
+      for (let u = u0; u <= u1; u += step) seg(at(u, v0 - 1), at(u, v1 + 1));
+      ctx.stroke();
+    } else if (fin.id === 'aggregate') {
+      const n = Math.min(24000, Math.round(pp.m.area * 16)), r = Math.max(0.6, pxft * 0.045);
+      for (let i = 0; i < n; i++) {
+        const q = pr(at(u0 + rnd() * (u1 - u0), v0 + rnd() * (v1 - v0))); if (!q) continue;
+        ctx.fillStyle = rnd() < 0.5 ? 'rgba(110,95,75,0.75)' : 'rgba(225,214,195,0.8)';
+        ctx.beginPath(); ctx.arc(q[0], q[1], r * (0.6 + rnd() * 0.8), 0, 7); ctx.fill();
+      }
+    } else if (fin.id === 'stamped') {
+      const lens = [2, 3, 1.5, 2.5, 2, 1.5, 3];
+      ctx.strokeStyle = 'rgba(70,52,40,0.55)'; ctx.lineWidth = Math.max(1, pxft * 0.05);
+      let row = 0;
+      for (let v = v0; v < v1; v += 2, row++) {
+        let u = u0 - (row % 3) * 0.8, k = row;
+        while (u < u1) {
+          const L2 = lens[k++ % lens.length];
+          const q = [at(u, v), at(u + L2, v), at(u + L2, v + 2), at(u, v + 2)].map(pr);
+          if (q.every(Boolean)) {
+            ctx.beginPath(); q.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath();
+            const t = rnd(); ctx.fillStyle = t < 0.5 ? `rgba(0,0,0,${0.04 + t * 0.12})` : `rgba(255,240,220,${(t - 0.5) * 0.25})`;
+            ctx.fill(); ctx.stroke();
+          }
+          u += L2;
+        }
+      }
+    }
+  }
+  /* keep the photo's light and shadow */
+  ctx.globalAlpha = 0.42; ctx.globalCompositeOperation = 'multiply'; ctx.drawImage(img, 0, 0, W, H);
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  /* saw-cut control joints */
+  ctx.strokeStyle = 'rgba(38,38,40,0.85)'; ctx.lineWidth = Math.max(1.3, pxft * 0.06); ctx.beginPath();
+  pp.joints.forEach(j => seg(j[0], j[1])); ctx.stroke();
+  ctx.restore();
+  /* tooled edge */
+  ctx.save(); path(); ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = Math.max(1.2, pxft * 0.05); ctx.stroke(); ctx.restore();
+  return true;
+}
+function renderPhotoTab(job) {
+  $('#tab').innerHTML = `<div class="split">
+    <section class="main">
+      <div class="row" style="margin-bottom:10px">
+        <label class="btn primary" style="cursor:pointer">Upload a photo of the house<input type="file" accept="image/*" id="up" hidden></label>
+        <button class="btn" id="pin">Line up the plan on the photo</button>
+        <button class="btn" id="rot" title="Turn the plan a quarter turn if it lines up the wrong way">Turn plan ↻</button>
+        <button class="btn" id="clear">Clear</button>
+      </div>
+      <div id="phint" class="small" style="margin-bottom:10px;padding:8px 12px;border-radius:8px;background:var(--accent-soft);color:var(--accent-ink);display:none"></div>
+      <div class="grid2">
+        <figure style="margin:0"><figcaption class="eyebrow" style="margin-bottom:6px">Before</figcaption><canvas id="cb" class="canv" width="1200" height="800" aria-label="Before photo" style="touch-action:none"></canvas></figure>
+        <figure style="margin:0"><figcaption class="eyebrow" style="margin-bottom:6px">After (preview)</figcaption><canvas id="ca" class="canv" width="1200" height="800" aria-label="After preview"></canvas></figure>
+      </div>
+      <div class="card small" style="margin-top:12px">Take the photo from the street, the way the customer sees the house, with the whole driveway in view. Click <b>Line up the plan</b>, then click the 4 corners of the driveway on the <i>Before</i> photo, going around it. The measured plan, with every panel and joint, is then drawn into the photo in perspective. Drag the numbered dots to fine-tune.</div>
+    </section>
+    <aside class="side card">
+      <label class="f" style="margin-bottom:12px">Line up using<select id="refsel"></select></label>
+      <h3 style="margin:0 0 10px">Finish</h3>
+      <div id="fins"></div>
+      <div class="row" style="justify-content:space-between;background:var(--bg);border-radius:8px;padding:10px 12px;margin-top:6px"><span>Price with this finish</span><b id="fintotal"></b></div>
+      <a class="btn primary" style="width:100%;justify-content:center;margin-top:12px;height:46px" href="#/job/${job.id}/proposal">Next: proposal →</a>
+    </aside></div>`;
+  const cb = $('#cb'), ca = $('#ca'), xb = cb.getContext('2d'), xa = ca.getContext('2d');
+  let img = null, pinning = null, drag = null, raf = 0;
+  job.trace = job.trace || [];
+  const plan = () => photoPlan(job);
+  const PL0 = plan();
+  $('#refsel').innerHTML = PL0 ? PL0.pours.map(x => `<option value="${x.p.id}">${esc(x.p.name)}</option>`).join('') : '<option>Draw the pours on the map first</option>';
+  if (PL0) $('#refsel').value = (job.photoFit && PL0.pours.some(x => x.p.id === job.photoFit.ref)) ? job.photoFit.ref : defaultRef(PL0).p.id;
+  $('#refsel').onchange = () => { if (job.photoFit) { job.photoFit = null; touch(job); } paint(true); setHint(); };
+  function fins() {
+    $('#fins').innerHTML = FINISHES.map(f => `<button class="finopt" aria-pressed="${job.finish === f.id}" data-f="${f.id}"><span class="sw" style="background:${f.color}"></span><span style="flex:1"><b>${f.name}</b><div class="small muted">${f.desc}</div></span><span class="small"><b>${job.pours.length ? money(estimate(job, f.id).total) : ''}</b></span></button>`).join('');
+    $('#fintotal').textContent = job.pours.length ? money(estimate(job).total) : '—';
+    document.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { job.finish = b.dataset.f; touch(job); refreshHeaderTotal(job); fins(); paint(true); });
+  }
+  function sizeTo(im) { const w = 1200, h = Math.round(1200 * im.height / im.width); [cb, ca].forEach(c => { c.width = w; c.height = h; }); }
+  function pathOf(ctx, poly) { ctx.beginPath(); poly.forEach((p, i) => { const x = p[0] * cb.width, y = p[1] * cb.height; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath(); }
+  function dot(ctx, x, y, label, color) { ctx.beginPath(); ctx.arc(x, y, 11, 0, 7); ctx.fillStyle = color; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = '#fff'; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.font = '700 13px Inter, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, x, y + 0.5); }
+  function paint(store, fast) {
+    const W = cb.width, H = cb.height;
+    [xb, xa].forEach(x => { x.fillStyle = '#E8E6E1'; x.fillRect(0, 0, W, H); });
+    if (!img) { xb.fillStyle = '#5B6068'; xb.font = '28px Inter, sans-serif'; xb.textAlign = 'center'; xb.fillText('Upload a photo to start', W / 2, H / 2); return; }
+    xb.drawImage(img, 0, 0, W, H); xa.drawImage(img, 0, 0, W, H);
+    const fin = FINISHES.find(x => x.id === job.finish) || FINISHES[0];
+    const PL = plan(), fit = job.photoFit;
+    let hidden = 0;
+    if (PL && fit && fit.pts.length === 4) {
+      const pr = fitProjector(fit, PL, W, H);
+      if (pr) {
+        PL.pours.forEach(pp => { if (!paintConcrete(xa, img, pp, pr, fin, fast)) hidden++; });
+        xb.save(); xb.setLineDash([8, 6]); xb.lineWidth = 2.5;
+        PL.pours.forEach(pp => {
+          const P = pp.xy.map(pr); if (P.some(q => !q)) return;
+          xb.beginPath(); P.forEach((q, i) => i ? xb.lineTo(q[0], q[1]) : xb.moveTo(q[0], q[1])); xb.closePath();
+          xb.strokeStyle = KIND[pp.p.kind].color; xb.stroke();
+        });
+        xb.restore();
+      }
+      fit.pts.forEach((q, i) => dot(xb, q[0] * W, q[1] * H, String(i + 1), '#C2560C'));
+    }
+    /* legacy hand-drawn outlines */
+    job.trace.forEach(poly => {
+      if (poly.length < 3) return;
+      xa.save(); pathOf(xa, poly); xa.clip(); xa.globalAlpha = 0.9; xa.fillStyle = fin.color; xa.fillRect(0, 0, W, H);
+      xa.globalAlpha = 0.42; xa.globalCompositeOperation = 'multiply'; xa.drawImage(img, 0, 0, W, H); xa.restore();
+    });
+    if (pinning) pinning.forEach((q, i) => dot(xb, q[0] * W, q[1] * H, String(i + 1), '#1C1F23'));
+    if (hidden && !fast) toast(hidden + ' pour' + (hidden > 1 ? 's' : '') + ' fall outside the photo view');
+    if (store && !fast) idb.set('after:' + job.id, ca.toDataURL('image/jpeg', 0.88));
+  }
+  function setHint() {
+    const h = $('#phint'), PL = plan();
+    const refName = PL ? (PL.pours.find(x => x.p.id === $('#refsel').value) || defaultRef(PL)).p.name.toLowerCase() : '';
+    let t = '';
+    if (!img) t = 'Upload a street photo of the house to start.';
+    else if (!PL) t = 'Draw the pours on the map first — the photo preview uses those measurements.';
+    else if (pinning) t = `Click the 4 outside corners of the <b>${esc(refName)}</b>, going around it (${pinning.length} of 4). If the old slab is a different shape, click where the new corners will be.`;
+    else if (job.photoFit) t = 'Drag the numbered dots onto the corners to fine-tune. If the plan is turned the wrong way, click <b>Turn plan ↻</b>.';
+    else t = 'Click <b>Line up the plan on the photo</b> to see the new concrete in the photo.';
+    h.innerHTML = t; h.style.display = 'block';
+    $('#pin').setAttribute('aria-pressed', !!pinning);
+    $('#pin').disabled = !img || !PL; $('#rot').disabled = !job.photoFit;
+    cb.style.cursor = pinning ? 'crosshair' : 'default';
+  }
+  $('#pin').onclick = () => { pinning = pinning ? null : []; setHint(); paint(); };
+  $('#rot').onclick = () => { if (!job.photoFit) return; job.photoFit.rot = ((job.photoFit.rot || 0) + 1) % 4; touch(job); paint(true); };
+  $('#clear').onclick = () => { job.trace = []; job.photoFit = null; pinning = null; touch(job); setHint(); paint(true); };
+  const evPt = e => { const r = cb.getBoundingClientRect(); return { r, p: [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height] }; };
+  cb.addEventListener('pointerdown', e => {
+    if (!img) return;
+    const { r, p } = evPt(e);
+    if (pinning) {
+      pinning.push(p);
+      if (pinning.length === 4) {
+        const PL = plan();
+        const fit = { ref: $('#refsel').value, pts: pinning, rot: 0 };
+        fit.rot = bestRotation(fit, PL, cb.width, cb.height);
+        job.photoFit = fit; pinning = null; touch(job); setHint(); paint(true);
+      } else paint();
+      setHint(); return;
+    }
+    if (job.photoFit) {
+      let best = -1, bd = 18;
+      job.photoFit.pts.forEach((q, i) => { const d = Math.hypot((q[0] - p[0]) * r.width, (q[1] - p[1]) * r.height); if (d < bd) { bd = d; best = i; } });
+      if (best >= 0) { drag = best; cb.setPointerCapture(e.pointerId); }
+    }
+  });
+  cb.addEventListener('pointermove', e => {
+    if (drag == null) return;
+    const { p } = evPt(e);
+    job.photoFit.pts[drag] = [Math.max(0, Math.min(1, p[0])), Math.max(0, Math.min(1, p[1]))];
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; paint(false, true); });
+  });
+  cb.addEventListener('pointerup', () => { if (drag == null) return; drag = null; touch(job); paint(true); });
+  $('#up').onchange = e => {
+    const file = e.target.files[0]; if (!file) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      const im = new Image();
+      im.onload = () => {
+        const c = document.createElement('canvas'); const w = Math.min(1600, im.width); c.width = w; c.height = Math.round(w * im.height / im.width);
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        const data = c.toDataURL('image/jpeg', 0.85);
+        idb.set('before:' + job.id, data);
+        const im2 = new Image(); im2.onload = () => { img = im2; job.trace = []; job.photoFit = null; touch(job); sizeTo(img); setHint(); paint(true); }; im2.src = data;
+      };
+      im.src = rd.result;
+    };
+    rd.readAsDataURL(file);
+  };
+  idb.get('before:' + job.id).then(d => { if (d) { const im = new Image(); im.onload = () => { img = im; sizeTo(im); paint(); setHint(); }; im.src = d; } else paint(); setHint(); });
+  fins();
+}
+
+/* =========================================================
+   TAB 4: PROPOSAL (5 printable pages)
+   ========================================================= */
+/* ---- satellite backdrop for site plans: Esri tiles stitched into one image, cached in memory + IndexedDB ---- */
+const SAT = new Map(), SATDONE = new Map();
+const satKey = (b, w, h) => [b.n, b.s, b.e, b.w].map(v => v.toFixed(6)).join(',') + '@' + w + 'x' + h;
+const lonToPx = (lng, z) => (lng + 180) / 360 * 256 * 2 ** z;
+const latToPx = (lat, z) => { const s = Math.sin(lat * Math.PI / 180); return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 256 * 2 ** z; };
+function satImage(b, w, h) {
+  const key = satKey(b, w, h);
+  if (SAT.has(key)) return SAT.get(key);
+  const p = (async () => {
+    const stored = await idb.get('sat:' + key);
+    if (stored) return stored;
+    const outW = Math.round(w * 1.6), outH = Math.round(h * 1.6);
+    const z = Math.max(1, Math.min(19, Math.floor(Math.log2(outW * 360 / ((b.e - b.w) * 256)))));
+    const X0 = lonToPx(b.w, z), X1 = lonToPx(b.e, z), Y0 = latToPx(b.n, z), Y1 = latToPx(b.s, z);
+    const c = document.createElement('canvas'); c.width = outW; c.height = outH;
+    const ctx = c.getContext('2d'); ctx.imageSmoothingQuality = 'high';
+    const sx = outW / (X1 - X0), sy = outH / (Y1 - Y0), loads = [];
+    for (let tx = Math.floor(X0 / 256); tx <= Math.floor(X1 / 256); tx++)
+      for (let ty = Math.floor(Y0 / 256); ty <= Math.floor(Y1 / 256); ty++)
+        loads.push(new Promise(res => {
+          const im = new Image(); im.crossOrigin = 'anonymous';
+          im.onload = () => { ctx.drawImage(im, (tx * 256 - X0) * sx, (ty * 256 - Y0) * sy, 256 * sx + 0.5, 256 * sy + 0.5); res(true); };
+          im.onerror = () => res(false);
+          im.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${ty}/${tx}`;
+        }));
+    const ok = await Promise.all(loads);
+    if (!ok.every(Boolean)) return null; /* offline or partial: keep the plain background */
+    const url = c.toDataURL('image/jpeg', 0.84);
+    idb.set('sat:' + key, url);
+    return url;
+  })();
+  SAT.set(key, p);
+  p.then(v => { if (v) SATDONE.set(key, v); else SAT.delete(key); });
+  return p;
+}
+/* fill in the satellite backdrop of every site plan on the page; resolves when all are done */
+function hydrateSat(root) {
+  return Promise.all([...(root || document).querySelectorAll('svg[data-sat]:not([data-done])')].map(svg => {
+    const [n, s, e, w] = svg.dataset.sat.split(',').map(Number), W = +svg.dataset.w, H = +svg.dataset.h;
+    return satImage({ n, s, e, w }, W, H).then(url => {
+      if (!url || svg.dataset.done) return;
+      svg.dataset.done = 1;
+      svg.querySelector('.satbg').innerHTML = `<image href="${url}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none"/><rect width="${W}" height="${H}" fill="#fff" opacity="0.08"/>`;
+    });
+  }));
+}
+function sitePlanSVG(E, H = 300) {
+  if (!E.pours.length) return '<div class="muted">No pours drawn yet.</div>';
+  const all = E.pours.flatMap(x => x.p.pts);
+  const F = frame(all);
+  const polys = E.pours.map(x => ({ x, xy: x.p.pts.map(F.toXY), joints: x.m.joints.map(s => s.map(F.toXY)) }));
+  const pts = polys.flatMap(p => p.xy);
+  const minX = Math.min(...pts.map(p => p[0])), maxX = Math.max(...pts.map(p => p[0]));
+  const minY = Math.min(...pts.map(p => p[1])), maxY = Math.max(...pts.map(p => p[1]));
+  const W = 690, pad = 36;
+  const sc = Math.min((W - 2 * pad) / Math.max(1, maxX - minX), (H - 2 * pad) / Math.max(1, maxY - minY));
+  const ox = (W - (maxX - minX) * sc) / 2, oy = (H - (maxY - minY) * sc) / 2;
+  const P = p => [ox + (p[0] - minX) * sc, H - (oy + (p[1] - minY) * sc)];
+  /* geographic bounds of the whole drawing area (north-up, so lat/lng map linearly) */
+  const nw = F.toLL([minX - ox / sc, minY + (H - oy) / sc]), se = F.toLL([minX + (W - ox) / sc, minY - oy / sc]);
+  const b = { n: nw[0], s: se[0], e: se[1], w: nw[1] }, key = satKey(b, W, H);
+  const cached = SATDONE.get(key);
+  const fill = { driveway: ['#FBE3D0', '#C2560C'], walkway: ['#DCE7FA', '#2F5FB8'], patio: ['#DDF0E4', '#2F8F5B'] };
+  const letters = 'ABCDEFGHIJ';
+  const bar = 10 * sc;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Site plan over satellite imagery, with pour areas and control joints" data-sat="${b.n},${b.s},${b.e},${b.w}" data-w="${W}" data-h="${H}" ${cached ? 'data-done="1"' : ''} style="display:block;width:100%;height:auto;border:1px solid #D5D2CC;border-radius:10px;background:#E4E2DC">`;
+  s += `<g class="satbg">${cached ? `<image href="${cached}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none"/><rect width="${W}" height="${H}" fill="#fff" opacity="0.08"/>` : ''}</g>`;
+  const badges = [];
+  polys.forEach((p, i) => {
+    const c = fill[p.x.p.kind], q = p.xy.map(P);
+    s += `<polygon points="${q.map(v => v.join(',')).join(' ')}" fill="${c[0]}" fill-opacity="0.6" stroke="${c[1]}" stroke-width="2.5" stroke-linejoin="round"/>`;
+    p.joints.forEach(j => { const a = P(j[0]), bb = P(j[1]); s += `<line x1="${a[0]}" y1="${a[1]}" x2="${bb[0]}" y2="${bb[1]}" stroke="${c[1]}" stroke-width="1.6" stroke-dasharray="5 4"/>`; });
+    const xs = q.map(v => v[0]), ys = q.map(v => v[1]);
+    const bx0 = Math.min(...xs), bx1 = Math.max(...xs), by0 = Math.min(...ys), by1 = Math.max(...ys);
+    let C = [q.reduce((t, v) => t + v[0], 0) / q.length, q.reduce((t, v) => t + v[1], 0) / q.length];
+    /* too small to hold the badge: put it beside the slab instead */
+    if (Math.min(bx1 - bx0, by1 - by0) < 30) C = bx1 + 18 < W - 16 ? [bx1 + 18, (by0 + by1) / 2] : [bx0 - 18, (by0 + by1) / 2];
+    badges.push(`<circle cx="${C[0]}" cy="${C[1]}" r="12" fill="#fff" stroke="${c[1]}" stroke-width="2"/><text x="${C[0]}" y="${C[1] + 5}" text-anchor="middle" font-family="Space Grotesk,sans-serif" font-size="14" font-weight="700" fill="${c[1]}">${letters[i]}</text>`);
+  });
+  s += badges.join('');
+  s += `<g><rect x="10" y="${H - 30}" width="${bar + 58}" height="22" rx="5" fill="#fff" opacity="0.92"/><line x1="20" y1="${H - 16}" x2="${20 + bar}" y2="${H - 16}" stroke="#1C1F23" stroke-width="2"/><line x1="20" y1="${H - 21}" x2="20" y2="${H - 11}" stroke="#1C1F23" stroke-width="2"/><line x1="${20 + bar}" y1="${H - 21}" x2="${20 + bar}" y2="${H - 11}" stroke="#1C1F23" stroke-width="2"/><text x="${26 + bar}" y="${H - 12}" font-family="Inter,sans-serif" font-size="11" fill="#1C1F23">10 ft</text></g>`;
+  s += `<g transform="translate(${W - 28},28)"><circle r="17" fill="#fff" opacity="0.92"/><path d="M0 -12 L6 4 L0 0 L-6 4 Z" fill="#1C1F23"/><text y="14" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" font-weight="700">N</text></g></svg>`;
+  return s;
+}
+function renderProposal(job) {
+  const P = S(), E = estimate(job), T = tiers(job), steps = workPlan(E.A);
+  if (!job.startDate) job.startDate = '';
+  const completion = job.completionDate || (job.startDate ? addWorkDays(job.startDate, P.workDays) : '');
+  const gAmt = job.refund > 0 ? Math.round(job.refund) : Math.round(E.total * P.guaranteePct / 100);
+  const doneTxt = completion ? fmtDate(completion) : 'the finish date we agree on';
+  const sig = job.signed && job.signed.sig ? job.signed : null;
+  const letters = 'ABCDEFGHIJ';
+  const head = `<div class="runhead"><span>${ph(P.company, 'Your company')}</span><span>${esc(job.name)} · ${ph(job.address, 'Address')}</span></div>`;
+  const terms = parseTerms(job.includes), proof = (P.proof || []).slice(0, 4), extra = terms.length || proof.length, NP = extra ? 6 : 5;
+  const foot = n => `<div class="foot"><span>${ph(P.company, 'Your company')} · ${ph(P.phone, 'Phone')}</span><span>Page ${n} of ${NP}</span></div>`;
+  const valid = addDays(job.proposalDate || today(), P.validDays);
+  const fin = E.fin;
+  const bonusRows = (P.bonuses || []).filter(b => b.name).map((b, i) => `<div style="display:flex;justify-content:space-between;gap:12px"><span><b>Bonus ${i + 1} ·</b> ${esc(b.name)}</span><span class="muted">${b.value ? esc(b.value) + ' value' : ''}</span></div>`).join('');
+
+  $('#tab').innerHTML = `
+  <div class="card noprint" style="margin-bottom:16px">
+    <div class="row">
+      <label class="f">Start date<input type="date" id="sd" value="${esc(job.startDate)}"></label>
+      <label class="f">Guaranteed completion<input type="date" id="cd" value="${esc(job.completionDate || '')}" placeholder=""></label>
+      <label class="f">Proposal date<input type="date" id="pd" value="${esc(job.proposalDate || today())}"></label>
+      <label class="f">Sign-by date (bonuses)<input type="date" id="sb" value="${esc(job.signBy || addDays(job.proposalDate || today(), 7))}"></label>
+      <label class="f">Customer price<input type="number" min="0" step="any" id="pprice" value="${job.price || ''}" placeholder="${E.pours.length ? Math.round(E.total) : ''}" style="width:120px"></label>
+      <label class="f">On-time refund $<input type="number" min="0" step="any" id="prefund" value="${job.refund || ''}" placeholder="${Math.round(E.total * P.guaranteePct / 100)}" style="width:110px"></label>
+      <label class="row small" style="gap:6px;align-self:flex-end;padding-bottom:12px"><input type="checkbox" id="ptiers" ${job.showTiers ? 'checked' : ''}> Offer finish upgrades</label>
+      <label class="row small" style="gap:6px;align-self:flex-end;padding-bottom:12px"><input type="checkbox" id="pbonus" ${job.showBonuses ? 'checked' : ''}> Show bonuses</label>
+      <div style="margin-left:auto" class="row">
+        ${sig ? `<span class="small">✓ Signed by <b>${esc(sig.name)}</b> <button class="btn sm" id="unsign">Remove</button></span>` : `<button class="btn" id="signnow" style="height:46px">✍︎ Sign now</button>`}
+        <button class="btn primary" id="print" style="height:46px">Print / Save as PDF</button>
+      </div>
+    </div>
+    ${E.pours.length && E.profit !== undefined ? `<div class="small" style="margin-top:6px">Your cost ${money(E.cost)} · your profit <b>${money(E.profit)}</b>${gAmt >= E.profit && E.profit > 0 ? ' <span style="color:#B42318">— the on-time refund would wipe out your whole profit</span>' : ''}</div>` : ''}
+    <div class="small muted" style="margin-top:8px">Completion defaults to start date + ${P.workDays} working days. Yellow fields are missing — fill them in under <a href="#/settings">Prices &amp; company</a>. <span id="printhint">In the print dialog choose “Save as PDF”, paper Letter, margins None.</span></div>
+  </div>
+  <details class="card noprint" style="margin-bottom:16px"><summary style="cursor:pointer;font-weight:600">What's included ${job.includes ? '· shown on page 5' : '· empty (fill it in to print a checklist page)'}</summary>
+    <div class="small muted" style="margin:8px 0">Paste what the sub's price includes, written for the customer. <b># Title</b> on its own line starts a group; <b>- item</b> makes a ✓ line, <b>x item</b> a ✗ (not included) line.</div>
+    <textarea id="terms" style="width:100%;min-height:220px;font:13px/1.45 Inter,sans-serif">${esc(job.includes || '')}</textarea>
+  </details>
+  ${E.pours.length ? '' : '<div class="card noprint" style="margin-bottom:16px">Outline at least one pour on the map to fill in the proposal.</div>'}
+  <div class="pages">
+
+  <!-- PAGE 1 COVER -->
+  <section class="page">
+    <div style="background:#1C1F23;color:#fff;padding:46px 60px 34px;display:flex;flex-direction:column;gap:24px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;align-items:center;gap:16px">${LOGO ? `<img src="${LOGO}" alt="" style="width:74px;height:74px;object-fit:contain;flex:none">` : ''}<div><div class="disp" style="font-weight:700;font-size:20px">${P.company ? esc(P.company) : '<span style="color:#FFD86B">[Your company]</span>'}</div>
+        <div style="font-size:12.5px;color:#C9CCD1">${[P.phone, P.email, P.license ? 'Lic. ' + P.license : ''].filter(Boolean).map(esc).join(' · ')}</div></div></div>
+        <div style="text-align:right;font-size:12.5px;color:#C9CCD1">${fmtDate(job.proposalDate || today())}</div>
+      </div>
+      <div><div style="font-size:13px;letter-spacing:2px;color:#FFB27A;font-weight:600">CONCRETE PROPOSAL</div>
+      <h1 style="margin:6px 0 0;font-size:44px;line-height:1.05;letter-spacing:-1px">${esc(projectTitle(job))}</h1></div>
+      <div style="display:flex;gap:32px;font-size:14px">
+        <div><div style="color:#C9CCD1;font-size:12.5px">Prepared for</div><b>${esc(job.name)}</b><div>${esc(job.address || '')}</div></div>
+        <div><div style="color:#C9CCD1;font-size:12.5px">Valid until</div><b>${fmtDate(valid)}</b></div>
+      </div>
+    </div>
+    <div class="pad">
+      <div id="heroWrap">${sitePlanSVG(E, 420)}</div>
+      <div style="display:flex;gap:14px">
+        <div style="flex:1.1;background:#F4F3F0;border-radius:12px;padding:16px 18px">
+          <div style="font-size:12.5px;color:#5B6068;font-weight:600;letter-spacing:.5px">YOUR INVESTMENT</div>
+          <div class="disp" style="font-size:42px;font-weight:700;letter-spacing:-1px;line-height:1.1">${money(E.total)}</div>
+          <div style="font-size:13.5px;color:#3C4047">${num(E.area)} sq ft · ${fin.desc.toLowerCase()} · materials, labor and clean-up included</div>
+        </div>
+        <div style="flex:1;border:2px solid #C2560C;border-radius:12px;padding:14px 16px;display:flex;gap:12px">
+          <svg width="38" height="38" viewBox="0 0 40 40" aria-hidden="true" style="flex:none"><path d="M20 3 L35 9 V19 C35 28 28 34 20 37 C12 34 5 28 5 19 V9 Z" fill="#FFF1E6" stroke="#C2560C" stroke-width="2.5"/><path d="M13 20 L18 25 L28 14" stroke="#C2560C" stroke-width="3" fill="none"/></svg>
+          <div><div class="disp" style="font-weight:700;font-size:18px;line-height:1.2">On time, or ${money(gAmt)} back</div>
+          <div style="font-size:13.5px;color:#3C4047">Finished by <b>${doneTxt}</b>, or we pay you ${money(gAmt)}.${P.freeCancel ? ' Free cancellation before we start.' : ''}</div></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(${NP - 1},1fr);gap:8px;font-size:13.5px">
+        <div style="border-top:3px solid #1C1F23;padding-top:6px"><b>2</b> Scope &amp; layout</div>
+        <div style="border-top:3px solid #1C1F23;padding-top:6px"><b>3</b> How we build it</div>
+        <div style="border-top:3px solid #1C1F23;padding-top:6px"><b>4</b> Price &amp; options</div>
+        ${extra ? `<div style="border-top:3px solid #1C1F23;padding-top:6px"><b>5</b> ${terms.length ? 'What\'s included' : 'Our work'}</div>` : ''}
+        <div style="border-top:3px solid #1C1F23;padding-top:6px"><b>${NP}</b> Guarantee &amp; sign</div>
+      </div>
+      ${foot(1)}
+    </div>
+  </section>
+
+  <!-- PAGE 2 SCOPE -->
+  <section class="page"><div class="pad">
+    ${head}
+    <div><div class="kicker">02 · SCOPE</div><h2>What we're pouring</h2></div>
+    <figure style="margin:0"><figcaption style="font-size:12.5px;color:#5B6068;margin-bottom:6px">Site plan from satellite measurements. Dashed lines are control joints — the panels each slab is cut into.</figcaption>${sitePlanSVG(E, 380)}</figure>
+    <table><thead><tr><th>AREA</th><th>SIZE</th><th>PANELS</th><th class="r">SQ FT</th><th class="r">THICK</th><th class="r">YD³</th></tr></thead><tbody>
+      ${E.pours.map((x, i) => `<tr><td><b>${letters[i]}</b> ${esc(x.p.name)}</td><td>${num(x.m.L)} × ${num(x.m.W)} ft</td><td>${x.m.rectish ? '' : '≈'}${x.m.nW * x.m.nL} × (${num(x.m.pw, 1)} × ${num(x.m.pl, 1)} ft)</td><td class="r">${num(x.m.area)}</td><td class="r">${x.p.thick}″</td><td class="r">${num(x.m.yd, 2)}</td></tr>`).join('')}
+      <tr><td colspan="3" style="font-weight:700;border-bottom:none">Total · we order ${num(E.order, 2)} yd³ (${P.waste}% extra so we never run short)</td><td class="r" style="font-weight:700;border-bottom:none">${num(E.area)}</td><td style="border-bottom:none"></td><td class="r" style="font-weight:700;border-bottom:none">${num(E.net, 2)}</td></tr>
+    </tbody></table>
+    <div><div class="disp" style="font-weight:700;font-size:19px;margin-bottom:6px">What it's made of — and why</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;font-size:13.5px;line-height:1.4">
+      <div><b>4,000 PSI air-entrained concrete.</b> Strong, and the tiny air pockets stop freeze-thaw from flaking the surface.</div>
+      <div><b>${[...new Set(E.pours.map(x => x.p.thick + '″ ' + KIND[x.p.kind].name.toLowerCase()))].join(', ')}.</b> ${E.R.footOnly ? 'Sized for foot traffic.' : 'Sized for what will drive on it.'}</div>
+      <div><b>${E.R.base}″ compacted gravel base.</b> Drains water out from under the slab so it does not heave or sink.</div>
+      <div><b>#3 rebar grid, 18″ apart.</b> Holds the slab together if the ground moves.</div>
+      <div><b>Control joints on a planned layout.</b> Concrete shrinks as it cures — joints make any crack happen in the joint, not across your slab.</div>
+      <div><b>${esc(fin.desc)}${fin.id === 'broom' ? ', tooled edges' : ''}.</b> ${fin.id === 'broom' ? 'Slip-resistant when wet.' : 'Chosen finish.'}</div>
+    </div></div>
+    ${foot(2)}
+  </div></section>
+
+  <!-- PAGE 3 PROCESS -->
+  <section class="page"><div class="pad">
+    ${head}
+    <div><div class="kicker">03 · PROCESS</div><h2>How we build it, step by step</h2><div style="font-size:14.5px;color:#3C4047">No surprises: every step, in order, and when you can use it.</div></div>
+    <ol style="list-style:none;margin:0;padding:0">
+      ${steps.map((s, i) => `<li style="display:flex;gap:12px;padding:7px 0;border-bottom:1px solid #E2E0DB"><span style="width:24px;height:24px;border-radius:50%;background:#1C1F23;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none">${i + 1}</span><span style="font-size:13.5px;line-height:1.4"><b>${s.title}.</b> ${s.detail}</span></li>`).join('')}
+    </ol>
+    <div style="display:flex;gap:14px">
+      <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.5"><div class="disp" style="font-weight:700;font-size:16px;margin-bottom:2px">What we need from you</div>
+        <div>• Cars moved off the work area until we say it's ready</div><div>• An outside water spigot we can use</div><div>• Kids, pets and visitors off the fresh concrete</div><div>• <b>Follow the written curing instructions for the first 7 days</b></div><div>• Tell us about private underground lines (sprinklers, a wire to a shed, pet fences). Locating private lines is not included; 811 only marks public utilities.</div></div>
+    </div>
+    ${foot(3)}
+  </div></section>
+
+  <!-- PAGE 4 PRICE -->
+  <section class="page"><div class="pad">
+    ${head}
+    <div><div class="kicker">04 · PRICE</div><h2>Everything you get</h2></div>
+    <table><thead><tr><th>INCLUDED</th><th class="r">PRICE</th></tr></thead><tbody>
+      ${(E.simple ? [{ label: esc(projectTitle(job).replace(/^New /, 'New ')), detail: `${num(E.area)} sq ft · complete, everything on page${extra ? 's 2–5' : 's 2–3'}`, amt: E.total }] : (E.custLines || E.lines)).map(l => `<tr><td>${l.label}${l.detail ? ` <span style="color:#5B6068;font-size:12.5px">· ${l.detail}</span>` : ''}</td><td class="r">${money(l.amt)}</td></tr>`).join('')}
+      ${!E.simple && E.tax + E.markup > 0.5 ? `<tr><td>${E.simple ? 'Overhead &amp; profit' : 'Sales tax on materials · overhead &amp; profit'}</td><td class="r">${money(E.tax + E.markup)}</td></tr>` : ''}
+      <tr><td style="font-weight:700;font-size:17px;border-bottom:none">Your price</td><td class="r" style="font-weight:700;font-size:17px;border-bottom:none">${money(E.total)}</td></tr>
+    </tbody></table>
+    ${bonusRows && job.showBonuses ? `<div style="border:2px dashed #C2560C;border-radius:12px;padding:12px 16px;background:#FFF8F2"><div class="disp" style="font-weight:700;font-size:17px">Included free when you sign by ${fmtDate(job.signBy || addDays(job.proposalDate || today(), 7))}</div><div style="display:flex;flex-direction:column;gap:3px;font-size:13.5px;margin-top:6px">${bonusRows}</div></div>` : ''}
+    ${job.showTiers ? `<div><div class="disp" style="font-weight:700;font-size:17px;margin-bottom:10px">Choose your finish</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      ${T.map(t => `<div class="tier ${t.f.id === fin.id ? 'on' : ''}">${t.f.id === fin.id ? '<span class="badge">QUOTED</span>' : ''}<div style="height:28px;border-radius:6px;background:${t.f.color};margin-bottom:6px"></div><b style="font-size:14px">${t.f.name}</b><div style="font-size:12.5px;color:#3C4047">${t.f.desc}</div><div class="disp" style="font-weight:700;font-size:18px;margin-top:3px">${money(t.total)}</div></div>`).join('')}
+    </div></div>` : ''}
+    <div style="display:flex;gap:14px;font-size:13.5px">
+      <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:10px 14px"><b>Payment schedule</b><div>${P.dep1}% up front (${money(E.total * P.dep1 / 100)}) to book your dates</div><div>${[P.dep2 > 0 ? `${P.dep2}% on pour day` : '', P.dep3 > 0 ? `${P.dep3}% on completion (${money(E.total * P.dep3 / 100)})` : ''].filter(Boolean).join(' · ')}</div>${P.freeCancel ? '<div>Cancel free, for any reason, before we start (minus any permit fees already paid).</div>' : ''}</div>
+      <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:10px 14px"><b>Measured remotely, confirmed on site</b><div>If the area differs by more than 5% at the site check, we adjust at the same unit prices — in writing, before work starts.</div></div>
+    </div>
+    ${foot(4)}
+  </div></section>
+
+  ${extra ? `<!-- PAGE 5 WHAT'S INCLUDED / OUR WORK -->
+  <section class="page"><div class="pad">
+    ${head}
+    ${terms.length ? `<div><div class="kicker">05 · WHAT'S INCLUDED</div><h2>Everything in your price</h2></div>` : `<div><div class="kicker">05 · OUR WORK</div><h2>Recent jobs by our crews</h2></div>`}
+    <div style="column-count:2;column-gap:30px;font-size:14px;line-height:1.45;color:#2A2D31">
+      ${terms.map(t => `<div style="break-inside:avoid;margin-bottom:16px">${t.title ? `<div class="disp" style="font-weight:700;font-size:17px;color:#1C1F23;margin-bottom:6px;border-bottom:2px solid #1C1F23;padding-bottom:3px">${esc(t.title)}</div>` : ''}${t.paras.map(x => x.bullet ? `<div style="display:flex;gap:9px;padding:3px 0"><span style="color:${x.no ? '#9A9FA6' : '#2F8F5B'};font-weight:700;flex:none">${x.no ? '✗' : '✓'}</span><span>${esc(x.text)}</span></div>` : `<p style="margin:0 0 6px">${esc(x.text)}</p>`).join('')}</div>`).join('')}
+    </div>
+    ${proof.length ? `<div>${terms.length ? '<div class="disp" style="font-weight:700;font-size:17px;margin-bottom:8px">Recent jobs by our crews</div>' : ''}
+      <div style="display:grid;grid-template-columns:repeat(${terms.length ? Math.min(proof.length, 2) : (proof.length === 1 ? 1 : 2)},1fr);gap:10px">
+        ${proof.map(ph => `<figure style="margin:0"><img data-proof="${ph.id}" alt="${esc(ph.caption || 'Recent concrete job')}" style="width:100%;height:${terms.length ? (proof.length > 2 ? 150 : 250) : (proof.length > 2 ? 330 : 600)}px;object-fit:cover;border-radius:10px;display:block;background:#E4E2DC">${ph.caption ? `<figcaption style="font-size:12px;color:#5B6068;margin-top:4px">${esc(ph.caption)}</figcaption>` : ''}</figure>`).join('')}
+      </div></div>` : ''}
+    ${foot(5)}
+  </div></section>` : ''}
+
+  <!-- GUARANTEE -->
+  <section class="page"><div class="pad">
+    ${head}
+    <div><div class="kicker">0${NP} · OUR PROMISE</div><h2>You take no risk</h2></div>
+    <div style="display:flex;gap:14px">
+      <div style="flex:1.3;background:#1C1F23;color:#fff;border-radius:12px;padding:16px 18px">
+        <div class="disp" style="font-weight:700;font-size:21px">On-time guarantee</div>
+        <div style="font-size:14px;margin-top:8px;line-height:1.5">If we don't finish by <b>${doneTxt}</b>, we pay you <b>${money(gAmt)}</b>. Paid within 14 days, by check or as a credit off your final payment.</div>
+      </div>
+      <div style="flex:1;border:2px solid #1C1F23;border-radius:12px;padding:16px 18px">
+        <div class="disp" style="font-weight:700;font-size:19px;line-height:1.15">${P.warrantyYears}-year workmanship warranty</div>
+        <div style="font-size:13.5px;margin-top:8px;line-height:1.5">Covers defects caused by improper installation, starting when the work is substantially complete.</div>
+      </div>
+    </div>
+    <div style="font-size:12.5px;line-height:1.5;color:#3C4047">
+      <div class="disp" style="font-weight:700;font-size:15px;color:#1C1F23;margin-bottom:3px">How the on-time guarantee works</div>
+      <div><b>"Finished"</b> means the concrete is poured, finished, joints cut, forms removed and the site cleaned up. Curing time is not counted.</div>
+      <div style="margin-top:4px"><b>The date moves day-for-day</b> only for things outside our control: rain, frozen ground or overnight lows forecast below 40°F; changes you ask for; permit, inspection or utility-locate delays; buried debris or soil problems found during digging; or the work area being blocked. We tell you in writing the same day if the date moves, and why.</div>
+      <div style="margin-top:4px">One payment per project, ${money(gAmt)} total. The warranty does not cover ordinary hairline or shrinkage cracks, color variation, soil movement, weathering, de-icing chemicals, improper curing or use, or damage by others.</div>
+    </div>
+    <div style="border-top:2px solid #1C1F23;padding-top:12px;display:flex;flex-direction:column;gap:10px">
+      <div class="disp" style="font-weight:700;font-size:19px">Accept this proposal</div>
+      <div style="display:flex;gap:18px;font-size:13.5px;flex-wrap:wrap">${(job.showTiers ? T : T.filter(t => t.f.id === fin.id)).map(t => `<span><span class="box" style="${sig && sig.tier === t.f.id ? 'background:#1C1F23;box-shadow:inset 0 0 0 2px #fff' : ''}"></span>${t.f.name} · ${money(t.total)}</span>`).join('')}</div>
+      <div style="font-size:12.5px;color:#3C4047">${job.startDate ? `Signing books your start date of <b>${fmtDate(job.startDate)}</b> and guaranteed completion of <b>${doneTxt}</b>.` : 'Signing books your project; we confirm your start and finish dates with you in writing.'} Valid until ${fmtDate(valid)}.${P.freeCancel ? ' <b>Free cancellation:</b> cancel for any reason before work starts and your deposit is refunded in full, minus any permit fees already paid.' : ''}</div>
+      <div style="display:flex;gap:40px;margin-top:${sig ? 6 : 30}px;align-items:flex-end">
+        <div style="flex:1">${sig ? `<img src="${sig.sig}" alt="Customer signature" style="height:64px;display:block">` : ''}<div style="border-top:1px solid #1C1F23;padding-top:5px;font-size:12.5px;color:#5B6068">${sig ? `<b style="color:#1C1F23">${esc(sig.name)}</b> · signed ${esc(sig.when)}` : 'Customer signature · date'}</div></div>
+        <div style="flex:1"><div style="border-top:1px solid #1C1F23;padding-top:5px;font-size:12.5px;color:#5B6068">${ph(P.company, 'Your company')} · date</div></div>
+      </div>
+    </div>
+    ${foot(NP)}
+  </div></section>
+  </div>`;
+
+  fitPages();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitPages);
+  hydrateSat($('#tab'));
+  document.querySelectorAll('img[data-proof]').forEach(im => idb.get('proof:' + im.dataset.proof).then(d => { if (d) { im.src = d; im.onload = fitPages; } }));
+  idb.get('after:' + job.id).then(d => {
+    if (d && ((job.trace || []).length || job.photoFit) && $('#heroWrap')) {
+      $('#heroWrap').innerHTML = `<img class="hero" src="${d}" alt="Preview of the home with the new concrete">`;
+      const im = $('#heroWrap img'); im.onload = fitPages;
+    }
+  });
+  const upd = (k) => e => { job[k] = e.target.value; touch(job); renderProposal(job); };
+  $('#ptiers').onchange = e => { job.showTiers = e.target.checked; touch(job); renderProposal(job); };
+  $('#pbonus').onchange = e => { job.showBonuses = e.target.checked; touch(job); renderProposal(job); };
+  $('#pprice').onchange = e => { job.price = Math.max(0, parseFloat(e.target.value) || 0); job.priceFin = job.finish || 'broom'; touch(job); refreshHeaderTotal(job); renderProposal(job); };
+  $('#prefund').onchange = e => { job.refund = Math.max(0, parseFloat(e.target.value) || 0); touch(job); renderProposal(job); };
+  if ($('#signnow')) $('#signnow').onclick = () => signModal(job);
+  if ($('#unsign')) $('#unsign').onclick = () => { if (confirm('Remove the customer signature from this proposal?')) { delete job.signed; touch(job); renderProposal(job); } };
+  $('#terms').onchange = e => { job.includes = e.target.value.trim(); touch(job); renderProposal(job); $('#terms').closest('details').open = true; };
+  $('#sd').onchange = upd('startDate'); $('#cd').onchange = upd('completionDate'); $('#pd').onchange = upd('proposalDate'); $('#sb').onchange = upd('signBy');
+  const app = window.slabcalc;
+  if (app && app.savePDF) { $('#print').textContent = 'Save PDF'; $('#printhint').textContent = 'Saves a letter-size PDF ready to email or print.'; }
+  $('#print').onclick = async () => {
+    if (!job.proposalDate) { job.proposalDate = today(); touch(job); }
+    const btn = $('#print'), label = btn.textContent; btn.disabled = true; btn.textContent = 'Preparing…';
+    await Promise.race([hydrateSat($('#tab')), new Promise(r => setTimeout(r, 8000))]);
+    btn.disabled = false; btn.textContent = label;
+    fitPages();
+    if (app && app.savePDF) {
+      const safe = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '').trim();
+      const r = await app.savePDF(`Proposal - ${safe(job.name) || "Customer"}.pdf`);
+      if (r && r.saved) toast('PDF saved');
+      else if (r && r.error) toast('Could not save the PDF: ' + r.error);
+    } else window.print();
+  };
+}
+/* customer signs on the spot (phone or tablet): pick a finish, type name, sign with a finger */
+function signModal(job) {
+  const cur = job.finish || 'broom', T = tiers(job).filter(t => job.showTiers || t.f.id === cur), P = S();
+  const bg = document.createElement('div'); bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal" role="dialog" aria-label="Sign proposal" style="width:min(640px,100%)">
+    <h2 style="margin:0 0 4px">Accept your proposal</h2>
+    <div class="small muted" style="margin-bottom:12px">${esc(projectTitle(job))} · ${esc(job.address || '')}</div>
+    <div class="small" style="font-weight:600;margin-bottom:6px">${T.length > 1 ? '1. Choose your finish' : '1. Your price'}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:12px">${T.map(t => `<button type="button" class="chip" data-tier="${t.f.id}" aria-pressed="${t.f.id === cur}" style="height:auto;min-height:64px;border-radius:10px;margin:0;display:flex;flex-direction:column;align-items:flex-start;padding:8px 10px"><b>${t.f.name}</b><span class="small">${t.f.desc}</span><b>${money(t.total)}</b></button>`).join('')}</div>
+    <label class="f" style="margin-bottom:10px">2. Your full name<input id="sgname" autocomplete="name" value="${esc(job.name && !/\d/.test(job.name) ? job.name : '')}" style="font-size:18px;height:48px"></label>
+    <div class="small" style="font-weight:600;margin-bottom:6px">3. Sign with your finger</div>
+    <div style="position:relative"><canvas id="sgpad" style="width:100%;height:180px;border:2px dashed #A8A49C;border-radius:10px;touch-action:none;background:#FAFAF8;display:block"></canvas>
+      <button type="button" class="btn sm" id="sgclear" style="position:absolute;right:8px;top:8px">Clear</button></div>
+    <label class="row small" style="margin:12px 0;gap:10px;align-items:flex-start;flex-wrap:nowrap"><input type="checkbox" id="sgok" style="width:22px;height:22px;flex:none"> <span>I accept this proposal at the price shown for the finish I chose, including the work described and the guarantee and warranty terms.${P.freeCancel ? ' I can cancel for any reason before work starts and get my deposit back, minus any permit fees already paid.' : ''}</span></label>
+    <div class="row" style="justify-content:flex-end"><button class="btn" id="sgcancel">Cancel</button><button class="btn primary" id="sgdo" disabled style="height:48px;min-width:140px">Sign</button></div>
+  </div>`;
+  document.body.appendChild(bg);
+  let tier = cur, drawn = false;
+  const cv = bg.querySelector('#sgpad'), ctx = cv.getContext('2d');
+  const fit = () => { const r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1; cv.width = r.width * d; cv.height = r.height * d; ctx.setTransform(d, 0, 0, d, 0, 0); ctx.lineWidth = 2.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#1C2A5A'; drawn = false; check(); };
+  const check = () => { bg.querySelector('#sgdo').disabled = !(drawn && bg.querySelector('#sgname').value.trim().length > 1 && bg.querySelector('#sgok').checked && tier); };
+  let last = null;
+  const pos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  cv.onpointerdown = e => { cv.setPointerCapture(e.pointerId); last = pos(e); ctx.beginPath(); ctx.arc(last[0], last[1], 1.2, 0, 7); ctx.fillStyle = '#1C2A5A'; ctx.fill(); e.preventDefault(); };
+  cv.onpointermove = e => { if (!last) return; const p = pos(e); ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); last = p; if (!drawn) { drawn = true; check(); } e.preventDefault(); };
+  cv.onpointerup = cv.onpointercancel = () => { last = null; };
+  bg.querySelector('#sgclear').onclick = fit;
+  bg.querySelectorAll('[data-tier]').forEach(b => b.onclick = () => { tier = b.dataset.tier; bg.querySelectorAll('[data-tier]').forEach(x => x.setAttribute('aria-pressed', x === b)); check(); });
+  bg.querySelector('#sgname').oninput = check; bg.querySelector('#sgok').onchange = check;
+  const close = () => bg.remove();
+  bg.querySelector('#sgcancel').onclick = close;
+  bg.querySelector('#sgdo').onclick = () => {
+    /* trim the signature to its ink so it prints at a sensible size */
+    const d = ctx.getImageData(0, 0, cv.width, cv.height).data; let x0 = cv.width, y0 = cv.height, x1 = 0, y1 = 0;
+    for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) if (d[(y * cv.width + x) * 4 + 3] > 20) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    const pad = 8, w = Math.max(1, x1 - x0 + 2 * pad), h = Math.max(1, y1 - y0 + 2 * pad), out = document.createElement('canvas'); out.width = w; out.height = h;
+    out.getContext('2d').drawImage(cv, x0 - pad, y0 - pad, w, h, 0, 0, w, h);
+    const now = new Date();
+    job.finish = tier;
+    job.signed = { name: bg.querySelector('#sgname').value.trim(), tier, total: T.find(t => t.f.id === tier).total, sig: out.toDataURL('image/png'), at: now.toISOString(), when: now.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) };
+    if (/^\d/.test(job.name || '')) job.name = job.signed.name;
+    touch(job); close(); renderJob(job, 'proposal'); toast('Signed — now tap Save PDF');
+  };
+  requestAnimationFrame(fit);
+}
+/* "# Title" starts a group, "- item" is a ✓ line, blank lines split paragraphs */
+function parseTerms(txt) {
+  const out = []; let cur = null, buf = [];
+  const sec = () => cur || (out.push(cur = { title: '', paras: [] }), cur);
+  const flush = () => { if (buf.length) { sec().paras.push({ text: buf.join(' ') }); buf = []; } };
+  String(txt || '').split(/\r?\n/).forEach(line => {
+    const l = line.trim();
+    if (/^#+\s/.test(l)) { flush(); out.push(cur = { title: l.replace(/^#+\s*/, ''), paras: [] }); }
+    else if (/^[xX✗×]\s+/.test(l)) { flush(); sec().paras.push({ text: l.replace(/^[xX✗×]\s+/, ''), bullet: true, no: true }); }
+    else if (/^[-•*✓]\s*/.test(l) && l.length > 1) { flush(); sec().paras.push({ text: l.replace(/^[-•*✓]\s*/, ''), bullet: true }); }
+    else if (!l) flush();
+    else buf.push(l);
+  });
+  flush();
+  return out.filter(t => t.title || t.paras.length);
+}
+/* shrink a page's content (never the page) until it fits on its letter sheet */
+function fitPages() {
+  document.querySelectorAll('.page').forEach(page => {
+    const pad = page.querySelector('.pad'); if (!pad) return;
+    pad.style.zoom = ''; pad.style.flex = ''; pad.style.height = '';
+    const avail = page.clientHeight - pad.offsetTop;
+    const foot = pad.lastElementChild;
+    /* overflow of the content past the pad (the footer is pushed down by margin-top:auto, so measure the pad, not the page) */
+    const need = () => Math.max(pad.scrollHeight - pad.clientHeight, foot.getBoundingClientRect().bottom - (page.getBoundingClientRect().bottom - 30 * (parseFloat(pad.style.zoom) || 1)));
+    pad.style.flex = 'none'; pad.style.height = avail + 'px';
+    if (need() <= 0.5) return;
+    let z = 1;
+    while (z > 0.7) {
+      z = Math.round((z - 0.02) * 100) / 100;
+      pad.style.zoom = z; pad.style.flex = 'none'; pad.style.height = (avail / z) + 'px';
+      if (need() <= 0.5) break;
+    }
+  });
+}
+function projectTitle(job) {
+  const kinds = [...new Set((job.pours || []).map(p => p.kind))];
+  const n = { driveway: 'driveway', walkway: 'walkway', patio: 'patio' };
+  if (!kinds.length) return 'New concrete';
+  const w = kinds.map(k => n[k]);
+  const t = w.length === 1 ? w[0] : w.slice(0, -1).join(', ') + ' & ' + w[w.length - 1];
+  return 'New ' + t;
+}
+
+/* =========================================================
+   TAB 5: SUBCONTRACTOR QUOTE REQUEST (no customer prices or contact info)
+   ========================================================= */
+function subScopeItems(A, R) {
+  const tear = A.now === 'concrete' ? 'old concrete out and hauled' : A.now === 'asphalt' ? 'asphalt out and hauled' : A.now === 'grass' ? 'sod and topsoil stripped and hauled' : 'existing gravel regraded and reused';
+  return [
+    ['locate', '811 locates'],
+    ['tear', tear],
+    ['dig', `dig to ${R.dig}″ and grade (¼″/ft fall)`],
+    ['base', `${R.base}″ compacted stone base` + (A.soil === 'soft' ? ' on fabric' : '')],
+    ['forms', 'forms' + (A.slope === 'steep' ? ' and step-downs' : '')],
+    ['rebar', '#3 rebar @ 18″ on chairs' + (A.tie === 'garage' ? ', dowels into garage' : A.tie === 'city' ? ', expansion joint at city walk' : '')],
+    ['mix', '4,000 PSI air-entrained concrete'],
+    ['place', A.access === 'pump' ? 'pump, place and finish' : A.access === 'buggy' ? 'buggy, place and finish' : 'place and finish'],
+    ['joints', 'joints cut within 24 h'],
+    ['seal', 'curing, with written curing instructions for the homeowner'],
+    ['clean', 'clean-up, haul-off, grass edges restored'],
+    ['permit', 'permits, equipment and labor']
+  ];
+}
+function renderSubRequest(job) {
+  const P = S(), E = estimate(job), A = E.A, R = E.R;
+  const items = subScopeItems(A, R);
+  const sub = job.sub = Object.assign({ name: '', due: addDays(today(), 3), notes: '' }, job.sub || {});
+  const completion = job.completionDate || (job.startDate ? addWorkDays(job.startDate, P.workDays) : '');
+  const letters = 'ABCDEFGHIJ';
+  const ans = k => { const q = QUESTIONS.find(q => q.k === k); const o = q && q.o.find(o => o[0] === A[k]); return o ? o[1] : ''; };
+  const F = E.pours.length ? frame(E.pours.flatMap(x => x.p.pts)) : null;
+  const jointLf = F ? E.pours.reduce((s, x) => s + x.m.joints.reduce((t, j) => { const a = F.toXY(j[0]), b = F.toXY(j[1]); return t + Math.hypot(a[0] - b[0], a[1] - b[1]); }, 0), 0) : 0;
+  const co = P.company ? esc(P.company) : '<span class="ph">[Your company]</span>';
+  const foot = n => `<div class="foot"><span>${co} · ${ph(P.phone, 'Phone')}${P.email ? ' · ' + esc(P.email) : ''}</span><span>Quote request</span></div>`;
+
+  $('#tab').innerHTML = `
+  <div class="card noprint" style="margin-bottom:16px">
+    <div class="row">
+      <label class="f" style="min-width:240px">Subcontractor<input id="sname" value="${esc(sub.name)}" placeholder="Company or name"></label>
+      <label class="f">Quote needed by<input type="date" id="sdue" value="${esc(sub.due)}"></label>
+      <div style="margin-left:auto" class="row"><button class="btn primary" id="sprint" style="height:46px">Print / Save as PDF</button></div>
+    </div>
+    <div class="row" style="margin-top:12px;align-items:flex-end">
+      <label class="f">Sub's price (when it comes back)<input type="number" min="0" step="any" id="sprice" value="${job.subPrice || ''}" placeholder="$"></label>
+      <div class="small" style="padding-bottom:10px">${E.pours.length ? `Customer price <b>${money(E.total)}</b> · your profit <b>${money(E.profit)}</b> (${S().sqftMarkupPct || 0}% markup)${job.subPrice ? '' : ' — estimated from your per-sq-ft costs until you enter their price'}` : ''}</div>
+    </div>
+    <div class="small muted" style="margin-top:6px">The sub prices the whole job — nothing is left “by us”.</div>
+    <label class="f" style="margin-top:8px">Notes for the sub<textarea id="snote" placeholder="Access, parking, timing, anything they should know…">${esc(sub.notes)}</textarea></label>
+    <div class="small muted" style="margin-top:6px">Your customer's name, phone and your prices are not on this sheet — only the address, plan and specs.</div>
+  </div>
+  ${E.pours.length ? '' : '<div class="card noprint" style="margin-bottom:16px">Outline at least one pour on the map to fill in the request.</div>'}
+  <div class="pages">
+  <section class="page"><div class="pad">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px">
+      <div><div class="kicker">REQUEST FOR QUOTE</div><h2>${esc(projectTitle(job))}</h2><div style="font-size:15px;margin-top:2px">${ph(job.address, 'Job address')}</div></div>
+      <div style="text-align:right;font-size:13px;line-height:1.5">${LOGO ? `<img src="${LOGO}" alt="" style="width:60px;height:60px;object-fit:contain;display:block;margin:0 0 4px auto">` : ''}<div class="disp" style="font-weight:700;font-size:16px">${co}</div>${[P.phone, P.email].filter(Boolean).map(esc).join('<br>')}<div style="color:#5B6068">${fmtDate(today())}</div></div>
+    </div>
+    <div style="display:flex;gap:14px;font-size:13.5px">
+      <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:10px 14px"><div style="color:#5B6068;font-size:12px">To</div><b>${sub.name ? esc(sub.name) : '<span class="ph">[Subcontractor]</span>'}</b></div>
+      <div style="flex:1;background:#FFF1E6;border:2px solid #C2560C;border-radius:10px;padding:10px 14px"><div style="color:#5B6068;font-size:12px">Please return your price by</div><b>${sub.due ? fmtDate(sub.due) : '<span class="ph">[date]</span>'}</b></div>
+      <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:10px 14px"><div style="color:#5B6068;font-size:12px">Total area</div><b>${num(E.area)} sq ft · ${num(E.net, 2)} yd³ net</b></div>
+    </div>
+    <figure style="margin:0"><figcaption style="font-size:12.5px;color:#5B6068;margin-bottom:6px">Site plan from satellite measurements. Dashed lines are control joints. Field-verify before pricing.</figcaption>${sitePlanSVG(E, 220)}</figure>
+    <table><thead><tr><th>AREA</th><th>SIZE</th><th class="r">SQ FT</th><th class="r">EDGE LF</th><th class="r">SLAB</th><th style="padding-left:22px">PANELS</th><th class="r">YD³ NET</th></tr></thead><tbody>
+      ${E.pours.map((x, i) => `<tr><td><b>${letters[i]}</b> ${esc(x.p.name)}</td><td>${num(x.m.L, 1)} × ${num(x.m.W, 1)} ft</td><td class="r">${num(x.m.area)}</td><td class="r">${num(x.m.perim)}</td><td class="r">${x.p.thick}″</td><td style="padding-left:22px">${x.m.rectish ? '' : '≈'}${x.m.nW * x.m.nL} panels @ ${num(x.m.pw, 1)} × ${num(x.m.pl, 1)} ft</td><td class="r">${num(x.m.yd, 2)}</td></tr>`).join('')}
+      <tr><td colspan="2" style="font-weight:700;border-bottom:none">Total</td><td class="r" style="font-weight:700;border-bottom:none">${num(E.area)}</td><td class="r" style="font-weight:700;border-bottom:none">${num(E.perim)}</td><td style="border-bottom:none"></td><td style="border-bottom:none;padding-left:22px">${num(jointLf)} lf of joints</td><td class="r" style="font-weight:700;border-bottom:none">${num(E.net, 2)}</td></tr>
+    </tbody></table>
+    <div style="font-size:13px;line-height:1.45"><b>Site:</b> now ${ans('now').toLowerCase()} · ${ans('use')} · soil ${ans('soil').toLowerCase()} · ${ans('slope').toLowerCase()} · truck access: ${ans('access').toLowerCase()} · ties into: ${ans('tie').toLowerCase()} · ${R.base}″ base (≈${num(E.tons, 1)} tons) · dig ${R.dig}″ · ${esc(E.fin.desc.toLowerCase())}</div>
+    <div style="background:#F4F3F0;border-radius:10px;padding:10px 14px;font-size:13px;line-height:1.5">
+      <div><b>Turnkey — your price covers everything:</b> ${items.map(([, n]) => n).join(' · ')}.</div>
+      <div style="margin-top:4px">Joints on the layout shown. No pour below 40°F forecast lows without our OK.</div>
+      ${sub.notes ? `<div style="margin-top:4px"><b>Notes:</b> ${esc(sub.notes).replace(/\n/g, '<br>')}</div>` : ''}
+    </div>
+    <div style="border:1px solid #A8A49C;border-radius:10px;padding:10px 14px;font-size:13px;line-height:1.5">
+      <div class="disp" style="font-weight:700;font-size:15px;margin-bottom:2px">To get this job</div>
+      <div>• <b>Done by ${completion ? fmtDate(completion) : 'the agreed date'}</b> (weather days added). Our customer has an on-time guarantee; late days in your control are backcharged.</div>
+      <div>• <b>${P.warrantyYears}-year workmanship warranty</b> to us · <b>insurance certificate</b> (liability + workers' comp) naming ${co} before start · <b>signed lien waiver</b> with every payment.</div>
+    </div>
+    <div style="display:flex;gap:18px;align-items:flex-end">
+      <div style="flex:1.2;border:2px solid #1C1F23;border-radius:10px;padding:10px 14px"><div class="disp" style="font-weight:700;font-size:16px">Your price, total</div><div style="font-size:26px;font-weight:700;margin-top:14px">$ ____________________</div></div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:26px;font-size:12.5px;color:#5B6068">
+        <div style="border-top:1px solid #1C1F23;padding-top:5px">Earliest start date</div>
+        <div style="border-top:1px solid #1C1F23;padding-top:5px">Name · signature · date</div>
+      </div>
+    </div>
+    ${foot(1)}
+  </div></section>
+
+  </div>`;
+
+  fitPages();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitPages);
+  hydrateSat($('#tab'));
+  $('#sprice').onchange = e => { job.subPrice = Math.max(0, parseFloat(e.target.value) || 0); job.subFin = job.finish || 'broom'; touch(job); refreshHeaderTotal(job); renderSubRequest(job); };
+  $('#sname').onchange = e => { sub.name = e.target.value.trim(); touch(job); renderSubRequest(job); };
+  $('#sdue').onchange = e => { sub.due = e.target.value; touch(job); renderSubRequest(job); };
+  $('#snote').onchange = e => { sub.notes = e.target.value; touch(job); renderSubRequest(job); };
+  const app = window.slabcalc;
+  if (app && app.savePDF) $('#sprint').textContent = 'Save PDF';
+  $('#sprint').onclick = async () => {
+    const btn = $('#sprint'), label = btn.textContent; btn.disabled = true; btn.textContent = 'Preparing…';
+    await Promise.race([hydrateSat($('#tab')), new Promise(r => setTimeout(r, 8000))]);
+    btn.disabled = false; btn.textContent = label;
+    fitPages();
+    if (app && app.savePDF) {
+      const safe = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '').trim();
+      const r = await app.savePDF(`Quote request - ${safe(job.address).split(',')[0] || 'Job'}${sub.name ? ' - ' + safe(sub.name) : ''}.pdf`);
+      if (r && r.saved) toast('PDF saved');
+      else if (r && r.error) toast('Could not save the PDF: ' + r.error);
+    } else window.print();
+  };
+}
+
+/* =========================================================
+   SETTINGS
+   ========================================================= */
+function renderSettings() {
+  const P = S();
+  const simple = P.pricingMode === 'sqft';
+  const f = (k, label, step) => `<label class="f">${label}<input type="number" step="${step || 'any'}" min="0" data-k="${k}" value="${P[k]}"></label>`;
+  const t = (k, label, ph) => `<label class="f">${label}<input type="text" data-k="${k}" value="${esc(P[k])}" placeholder="${ph || ''}"></label>`;
+  $('#view').innerHTML = `
+  <h1 style="margin:0 0 4px;font-size:28px">Prices &amp; company</h1>
+  <p class="muted" style="margin:0 0 16px">Set these once. Every estimate and proposal uses them. Changes save automatically.</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px">
+    <div class="card"><h3 style="margin-top:0">Company</h3><div style="display:grid;gap:10px">${t('company', 'Company name')}${t('phone', 'Phone')}${t('email', 'Email')}${t('license', 'License #')}
+      <div class="row" style="align-items:center;gap:12px">${LOGO ? `<img src="${LOGO}" alt="Logo" style="width:64px;height:64px;object-fit:contain;border-radius:8px;background:#F4F3F0">` : '<span class="small muted">No logo yet</span>'}
+        <label class="btn sm">${LOGO ? 'Change logo' : 'Add logo'}<input type="file" accept="image/*" id="logoadd" hidden></label>${LOGO ? '<button class="btn sm danger" id="logodel">Remove</button>' : ''}</div>
+      <div class="small muted">Prints on the proposal cover and the sub request. A PNG with a transparent background looks best.</div></div></div>
+    <div class="card" style="border:2px solid var(--accent)"><h3 style="margin-top:0">How you price</h3>
+      <div class="row" role="group" aria-label="Pricing method" style="margin-bottom:12px">
+        <button class="btn" style="flex:1;justify-content:center" data-mode="sqft" aria-pressed="${simple}">Price per sq ft</button>
+        <button class="btn" style="flex:1;justify-content:center" data-mode="itemized" aria-pressed="${!simple}">Itemized costs</button>
+      </div>
+      ${simple ? `<div class="grid2">${f('sqft4', '4″ slab · your cost $ / sq ft')}${f('sqft5', '5″ slab · your cost $ / sq ft')}${f('sqft6', '6″ slab · your cost $ / sq ft')}${f('sqft8', '8″ slab · your cost $ / sq ft')}${f('sqftMarkupPct', 'Your markup %')}</div>
+      <div class="small muted" style="margin-top:8px">Your cost = what your sub charges, turnkey (dig, base, forms, rebar, concrete, finish, joints, curing). Removal, pump / buggy and finish upgrades are added on top. Once a sub sends their price, enter it on the job's Sub request tab and it replaces this estimate. Your markup is built into the customer's prices; it never shows as its own line.</div>`
+      : `<div class="small muted">Every material and labor item is priced separately, then tax and markup are added.</div>`}
+    </div>
+    <div class="card"><h3 style="margin-top:0">${simple ? 'Extras (added on top)' : 'Concrete'}</h3><div class="grid2">${simple ? f('demoConcreteSqft', 'Concrete tear-out $ / sq ft') + f('demoAsphaltSqft', 'Asphalt removal $ / sq ft') + f('pumpFee', 'Pump truck $') + f('buggySqft', 'Buggy placement $ / sq ft') : f('priceYard', 'Ready-mix $ / yd³') + f('waste', 'Waste / overage %') + f('roundYard', 'Round order up to (yd³)') + f('shortLoadMin', 'Short load under (yd³)') + f('shortLoadFee', 'Short-load fee $') + f('pumpFee', 'Pump truck $') + f('buggySqft', 'Buggy placement $ / sq ft')}</div></div>
+    ${simple ? '' : `<div class="card"><h3 style="margin-top:0">Site prep &amp; base</h3><div class="grid2">${f('demoConcreteSqft', 'Concrete tear-out $ / sq ft')}${f('demoAsphaltSqft', 'Asphalt removal $ / sq ft')}${f('sodSqft', 'Strip sod $ / sq ft')}${f('gravelTon', 'Gravel $ / ton')}${f('gravelReuse', 'Gravel saved when reusing %')}${f('fabricSqft', 'Geotextile $ / sq ft')}</div></div>
+    <div class="card"><h3 style="margin-top:0">Steel, forms &amp; labor</h3><div class="grid2">${f('rebarSqft', 'Rebar $ / sq ft')}${f('dowelFlat', 'Garage tie-in dowels $')}${f('formsLf', 'Forms $ / linear ft')}${f('laborSqft', 'Labor $ / sq ft')}${f('taxPct', 'Sales tax % (materials)')}${f('markupPct', 'Overhead & profit %')}</div></div>`}
+    <div class="card"><h3 style="margin-top:0">Finish upgrades ($ / sq ft)</h3><div class="grid2">${f('fin_broom', 'Broom (standard)')}${f('fin_charcoal', 'Charcoal tint')}${f('fin_aggregate', 'Exposed aggregate')}${f('fin_stamped', 'Stamped')}</div></div>
+    <div class="card"><h3 style="margin-top:0">Guarantee &amp; terms</h3><div class="grid2">${f('guaranteePct', 'On-time refund %')}${f('warrantyYears', 'Workmanship warranty (years)')}${f('workDays', 'Typical job length (work days)')}${f('validDays', 'Proposal valid (days)')}${f('dep1', 'Deposit %')}${f('dep2', 'Due on pour day %')}${f('dep3', 'Due on completion %')}</div></div>
+    <div class="card" style="grid-column:1/-1"><h3 style="margin-top:0">Proof photos (recent jobs)</h3>
+      <div class="small muted" style="margin-bottom:8px">Up to 4 print on page 5 of every proposal. Use photos you have permission to use. JPG or PNG. iPhone HEIC photos: AirDrop them to the Mac, or in Photos choose File → Export as JPEG first.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px" id="proofgrid">${(P.proof || []).map((ph, i) => `<div style="border:1px solid var(--line, #D5D2CC);border-radius:10px;padding:6px"><img data-proof="${ph.id}" alt="" style="width:100%;height:120px;object-fit:cover;border-radius:6px;display:block;background:#E4E2DC"><input type="text" data-pc="${i}" value="${esc(ph.caption || '')}" placeholder="Caption (optional)" style="width:100%;margin-top:6px"><div class="row" style="margin-top:4px;gap:4px">${i > 0 ? `<button class="btn sm" data-pu="${i}" title="Move earlier">←</button>` : ''}<button class="btn sm danger" data-pd="${i}">Remove</button></div></div>`).join('')}</div>
+      <label class="btn" style="margin-top:10px;display:inline-flex">+ Add photos<input type="file" accept="image/*" multiple id="proofadd" hidden></label></div>
+    <div class="card" style="grid-column:1/-1"><h3 style="margin-top:0">Bonuses (shown on the price page)</h3>
+      <div style="display:grid;gap:8px">${P.bonuses.map((b, i) => `<div class="row" style="flex-wrap:nowrap"><input type="text" data-b="${i}" data-bf="name" value="${esc(b.name)}" placeholder="Bonus" style="flex:3"><input type="text" data-b="${i}" data-bf="value" value="${esc(b.value)}" placeholder="Value, e.g. $350" style="flex:1"></div>`).join('')}</div>
+      <div class="small muted" style="margin-top:6px">Leave a bonus blank to hide it.</div></div>
+  </div>
+  <p class="small muted" style="margin-top:16px">Your data is stored in this browser on this Mac. Use <b>Back up data</b> on the Estimates page now and then.</p>`;
+  document.querySelectorAll('[data-k]').forEach(i => i.onchange = () => { P[i.dataset.k] = i.type === 'number' ? (parseFloat(i.value) || 0) : i.value; save(); toast('Saved'); });
+  document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { P.pricingMode = b.dataset.mode; save(); renderSettings(); toast(b.dataset.mode === 'sqft' ? 'Pricing per sq ft' : 'Itemized pricing'); });
+  document.querySelectorAll('[data-b]').forEach(i => i.onchange = () => { P.bonuses[+i.dataset.b][i.dataset.bf] = i.value; save(); toast('Saved'); });
+  $('#logoadd').onchange = async e => { const f = e.target.files[0]; if (!f) return; const url = await shrinkImage(f, 600, 'image/png').catch(() => null); if (!url) return toast(`Couldn't read ${f.name}`); LOGO = url; await idb.set('logo', url); renderSettings(); toast('Logo saved'); };
+  if ($('#logodel')) $('#logodel').onclick = () => { LOGO = null; idb.del('logo'); renderSettings(); };
+  P.proof = P.proof || [];
+  document.querySelectorAll('#proofgrid img[data-proof]').forEach(im => idb.get('proof:' + im.dataset.proof).then(d => { if (d) im.src = d; }));
+  document.querySelectorAll('[data-pc]').forEach(i => i.onchange = () => { P.proof[+i.dataset.pc].caption = i.value.trim(); save(); toast('Saved'); });
+  document.querySelectorAll('[data-pd]').forEach(b => b.onclick = () => { const [ph] = P.proof.splice(+b.dataset.pd, 1); idb.del('proof:' + ph.id); save(); renderSettings(); });
+  document.querySelectorAll('[data-pu]').forEach(b => b.onclick = () => { const i = +b.dataset.pu; [P.proof[i - 1], P.proof[i]] = [P.proof[i], P.proof[i - 1]]; save(); renderSettings(); });
+  $('#proofadd').onchange = async e => {
+    let n = 0;
+    for (const f of e.target.files) {
+      const url = await shrinkImage(f, 1600).catch(() => null);
+      if (!url) { toast(`Couldn't read ${f.name} — try saving it as JPG`); continue; }
+      const id = uid(); await idb.set('proof:' + id, url); P.proof.push({ id, caption: '' }); n++;
+    }
+    save(); renderSettings(); if (n) toast(`Added ${n} photo${n > 1 ? 's' : ''}`);
+  };
+}
+/* read an image file and return a JPEG data URL no wider/taller than max px */
+function shrinkImage(file, max, type) {
+  return new Promise((res, rej) => {
+    const u = URL.createObjectURL(file), im = new Image();
+    im.onload = () => { const k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight)); const c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u); res(type === 'image/png' ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.85)); };
+    im.onerror = () => { URL.revokeObjectURL(u); rej(); };
+    im.src = u;
+  });
+}
+
+idb.get('logo').then(d => { if (d && !LOGO) { LOGO = d; if (/proposal|sub|settings/.test(location.hash)) route(); } });
+route();
+</script>
+</body>
+</html>
