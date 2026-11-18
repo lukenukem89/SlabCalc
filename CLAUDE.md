@@ -29,6 +29,12 @@ Desktop app for a concrete contractor (driveways, walkways, patios). Scope: an e
 
 Site plans (`sitePlanSVG()`) draw over Esri satellite tiles stitched by `satImage()` (cached in IndexedDB as `sat:<bounds>`; `hydrateSat()` fills them in, and Save PDF waits for it). Small pours get their letter badge beside them.
 
+## Proposal extras
+- Per-job **Customer price** (`job.price`, anchored to `job.priceFin`) and **On-time refund $** (`job.refund`) on the Proposal toolbar; other finish tiers keep the same ratio. `job.subFin` anchors the sub's price. The toolbar shows cost/profit and warns when the refund ≥ profit.
+- Guarantee reads "started by … and finished by …"; without dates it says "the dates we agree on". `freeCancel` setting (default on) adds free cancellation before start.
+- **Sign now** (`signModal()`): customer picks a finish, types name, signs with a finger (pointer events, works on phones); saved as `job.signed = {name, tier, total, sig (PNG), at, when}`, printed on the last page; sets `job.finish`. Remove from the toolbar.
+- **Proof photos**: Settings card, stored in IndexedDB `proof:<id>`, list in `settings.proof`; up to 4 print on page 5. Backups carry them (`proof` map); a photos-only file (`{jobs:[], proof, proofCaptions}`) imports without touching prices.
+
 ## Estimate math (see `estimate()`)
 **Default: per-sq-ft pricing** (`pricingMode: 'sqft'`): each pour = area × installed rate for its thickness (owner's rates: 4″ $12, 5″ $14, 6″ $16; 8″ $20 is a placeholder; `sqftRate()`), plus tear-out (concrete/asphalt), pump/buggy and finish upgrades on top, `sqftMarkupPct` = owner's markup (default 0 → red "no profit" warning in the job header). The sq-ft rates are the owner's **costs** (what the sub charges, turnkey); `job.subPrice` overrides them once a sub quotes. Customer line items (`E.custLines`) have the markup built in — the proposal shows no markup line. No separate tax. Itemized mode below is still available in Settings.
 

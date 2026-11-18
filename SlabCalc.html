@@ -169,7 +169,7 @@ const DEFAULT_SETTINGS = {
   /* simple pricing: installed price per sq ft by slab thickness (removal, pump/buggy and finish upgrades extra) */
   pricingMode: 'sqft', sqft4: 12, sqft5: 14, sqft6: 16, sqft8: 20, sqftMarkupPct: 0,
   fin_broom: 0, fin_charcoal: 1.25, fin_aggregate: 3.50, fin_stamped: 6.00,
-  guaranteePct: 20, warrantyYears: 2, dep1: 30, dep2: 40, dep3: 30, validDays: 30, workDays: 3,
+  proof: [], freeCancel: true, guaranteePct: 20, warrantyYears: 2, dep1: 30, dep2: 40, dep3: 30, validDays: 30, workDays: 3,
   bonuses: [
     { name: 'Penetrating sealer applied at 30 days', value: '' },
     { name: '1-year check-up visit — we re-inspect every panel', value: '' },
@@ -509,11 +509,15 @@ function estimate(job, finishId) {
     /* cost = the sub's quoted price once entered (adjusted for a different finish tier), else your per-sq-ft costs */
     const est = lines.reduce((s, l) => s + l.amt, 0);
     const upg = f => P[f.key] > 0 ? area * P[f.key] : 0;
-    const quoted = FINISHES.find(f => f.id === (job.finish || 'broom')) || FINISHES[0];
+    /* the sub's price and your customer price are each tied to the finish they were set for */
+    const byId = id => FINISHES.find(f => f.id === id) || FINISHES[0];
+    const quoted = byId(job.subFin || 'broom'), priceQ = byId(job.priceFin || 'broom');
     const subP = +job.subPrice || 0;
     const cost = subP > 0 ? subP + upg(fin) - upg(quoted) : est;
-    const markup = cost * (P.sqftMarkupPct || 0) / 100;
-    const total = Math.round(cost + markup);
+    /* a per-job customer price (job.price) sets the quoted finish's total; other finishes keep the same ratio */
+    const costQ = subP > 0 ? subP + upg(priceQ) - upg(quoted) : est - upg(fin) + upg(priceQ);
+    const total = job.price > 0 && costQ > 0 ? Math.round(cost * job.price / costQ) : Math.round(cost * (1 + (P.sqftMarkupPct || 0) / 100));
+    const markup = total - cost;
     /* customer sees the same items with your markup built in (no rates, no markup line) */
     const k = est > 0 ? total / est : 0;
     const custLines = lines.map(l => ({ label: l.label, detail: l.cdetail != null ? l.cdetail : '', amt: Math.round(l.amt * k) }));
@@ -656,7 +660,9 @@ async function exportBackup() {
     const before = await idb.get('before:' + j.id), after = await idb.get('after:' + j.id);
     return (before || after) ? Object.assign({}, j, { photos: { before, after } }) : j;
   }));
-  const blob = new Blob([JSON.stringify({ jobs, settings: DB.settings })], { type: 'application/json' });
+  const proof = {};
+  for (const ph of (DB.settings.proof || [])) { const d = await idb.get('proof:' + ph.id); if (d) proof[ph.id] = d; }
+  const blob = new Blob([JSON.stringify({ jobs, settings: DB.settings, proof })], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `slabcalc-backup-${today()}.json`; a.click();
   toast('Backup downloaded');
 }
@@ -664,12 +670,18 @@ function importBackup(file) {
   if (!file) return;
   /* merge: estimates are added or updated by id; prices/company only change if the file has them */
   file.text().then(t => {
-    const d = JSON.parse(t); if (!Array.isArray(d.jobs)) throw 0;
+    const d = JSON.parse(t); if (!Array.isArray(d.jobs)) { if (d.proof) d.jobs = []; else throw 0; }
     let added = 0, updated = 0;
     d.jobs.forEach(j => { if (!j.proposalNo) j.proposalNo = nextProposalNo();
       if (j.photos) { if (j.photos.before) idb.set('before:' + j.id, j.photos.before); if (j.photos.after) idb.set('after:' + j.id, j.photos.after); delete j.photos; } const i = DB.jobs.findIndex(x => x.id === j.id); if (i >= 0) { DB.jobs[i] = j; updated++; } else { DB.jobs.push(j); added++; } });
     if (d.settings) DB.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings);
-    save(); route(); toast(`Imported: ${added} new, ${updated} updated` + (d.settings ? ' · prices restored' : ''));
+    if (d.proof) Object.entries(d.proof).forEach(([id, data]) => {
+      idb.set('proof:' + id, data);
+      /* a photos-only file adds to your proof photos without touching prices */
+      const P = DB.settings; P.proof = P.proof || [];
+      if (!d.settings && !P.proof.some(x => x.id === id)) P.proof.push({ id, caption: (d.proofCaptions || {})[id] || '' });
+    });
+    save(); route(); toast(`Imported: ${added} new, ${updated} updated` + (d.proof ? ` · ${Object.keys(d.proof).length} proof photos` : '') + (d.settings ? ' · prices restored' : ''));
   })
     .catch(() => toast('That file is not a SlabCalc backup'));
 }
@@ -707,7 +719,7 @@ function touch(job) { job.updated = Date.now(); save(); }
 function refreshHeaderTotal(job) { const el = $('#hdr-total'); if (el) { const E = estimate(job); el.textContent = E.pours.length ? money(E.total) : '—'; const pn = $('#hdr-profit'); if (pn) pn.innerHTML = profitNote(E); } }
 function profitNote(E) {
   if (!E.simple || !E.pours.length) return '';
-  if (!(S().sqftMarkupPct > 0)) return '<a href="#/settings" style="color:#B42318;font-weight:600">0% markup — no profit. Set it →</a>';
+  if (E.profit <= 0.5) return '<a href="#/settings" style="color:#B42318;font-weight:600">0% markup — no profit. Set it →</a>';
   return `<span class="muted">Your profit ${money(E.profit)}</span>`;
 }
 
@@ -1332,10 +1344,12 @@ function renderProposal(job) {
   const P = S(), E = estimate(job), T = tiers(job), steps = workPlan(E.A);
   if (!job.startDate) job.startDate = '';
   const completion = job.completionDate || (job.startDate ? addWorkDays(job.startDate, P.workDays) : '');
-  const gAmt = Math.round(E.total * P.guaranteePct / 100);
+  const gAmt = job.refund > 0 ? Math.round(job.refund) : Math.round(E.total * P.guaranteePct / 100);
+  const startTxt = job.startDate ? fmtDate(job.startDate) : 'the start date we agree on', doneTxt = completion ? fmtDate(completion) : 'the finish date we agree on';
+  const sig = job.signed && job.signed.sig ? job.signed : null;
   const letters = 'ABCDEFGHIJ';
   const head = `<div class="runhead"><span>${ph(P.company, 'Your company')} · Proposal No. ${esc(job.proposalNo || '')}</span><span>${esc(job.name)} · ${ph(job.address, 'Address')}</span></div>`;
-  const terms = parseTerms(job.includes), NP = terms.length ? 6 : 5;
+  const terms = parseTerms(job.includes), proof = (P.proof || []).slice(0, 4), extra = terms.length || proof.length, NP = extra ? 6 : 5;
   const foot = n => `<div class="foot"><span>${ph(P.company, 'Your company')} · ${ph(P.phone, 'Phone')}</span><span>Page ${n} of ${NP}</span></div>`;
   const valid = addDays(job.proposalDate || today(), P.validDays);
   const fin = E.fin;
@@ -1348,10 +1362,14 @@ function renderProposal(job) {
       <label class="f">Guaranteed completion<input type="date" id="cd" value="${esc(job.completionDate || '')}" placeholder=""></label>
       <label class="f">Proposal date<input type="date" id="pd" value="${esc(job.proposalDate || today())}"></label>
       <label class="f">Sign-by date (bonuses)<input type="date" id="sb" value="${esc(job.signBy || addDays(job.proposalDate || today(), 7))}"></label>
+      <label class="f">Customer price<input type="number" min="0" step="any" id="pprice" value="${job.price || ''}" placeholder="${E.pours.length ? Math.round(E.total) : ''}" style="width:120px"></label>
+      <label class="f">On-time refund $<input type="number" min="0" step="any" id="prefund" value="${job.refund || ''}" placeholder="${Math.round(E.total * P.guaranteePct / 100)}" style="width:110px"></label>
       <div style="margin-left:auto" class="row">
+        ${sig ? `<span class="small">✓ Signed by <b>${esc(sig.name)}</b> <button class="btn sm" id="unsign">Remove</button></span>` : `<button class="btn" id="signnow" style="height:46px">✍︎ Sign now</button>`}
         <button class="btn primary" id="print" style="height:46px">Print / Save as PDF</button>
       </div>
     </div>
+    ${E.pours.length && E.profit !== undefined ? `<div class="small" style="margin-top:6px">Your cost ${money(E.cost)} · your profit <b>${money(E.profit)}</b>${gAmt >= E.profit && E.profit > 0 ? ' <span style="color:#B42318">— the on-time refund would wipe out your whole profit</span>' : ''}</div>` : ''}
     <div class="small muted" style="margin-top:8px">Completion defaults to start date + ${P.workDays} working days. Yellow fields are missing — fill them in under <a href="#/settings">Prices &amp; company</a>. <span id="printhint">In the print dialog choose “Save as PDF”, paper Letter, margins None.</span></div>
   </div>
   <details class="card noprint" style="margin-bottom:16px"><summary style="cursor:pointer;font-weight:600">What's included ${job.includes ? '· shown on page 5' : '· empty (fill it in to print a checklist page)'}</summary>
@@ -1386,15 +1404,15 @@ function renderProposal(job) {
         </div>
         <div style="flex:1;border:2px solid #C2560C;border-radius:12px;padding:14px 16px;display:flex;gap:12px">
           <svg width="38" height="38" viewBox="0 0 40 40" aria-hidden="true" style="flex:none"><path d="M20 3 L35 9 V19 C35 28 28 34 20 37 C12 34 5 28 5 19 V9 Z" fill="#FFF1E6" stroke="#C2560C" stroke-width="2.5"/><path d="M13 20 L18 25 L28 14" stroke="#C2560C" stroke-width="3" fill="none"/></svg>
-          <div><div class="disp" style="font-weight:700;font-size:18px;line-height:1.2">On time, or ${P.guaranteePct}% back</div>
-          <div style="font-size:13.5px;color:#3C4047">Finished by ${completion ? '<b>' + fmtDate(completion) + '</b>' : '<span class="ph">[completion date]</span>'} or we refund ${money(gAmt)}. Terms on page ${NP}.</div></div>
+          <div><div class="disp" style="font-weight:700;font-size:18px;line-height:1.2">On time, or ${money(gAmt)} back</div>
+          <div style="font-size:13.5px;color:#3C4047">Started by <b>${startTxt}</b> and finished by <b>${doneTxt}</b>, or we pay you ${money(gAmt)}.${P.freeCancel ? ' Free cancellation before we start.' : ''}</div></div>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(${NP - 1},1fr);gap:8px;font-size:13.5px">
         <div style="border-top:3px solid #1C1F23;padding-top:6px"><b>2</b> Scope &amp; layout</div>
         <div style="border-top:3px solid #1C1F23;padding-top:6px"><b>3</b> How we build it</div>
         <div style="border-top:3px solid #1C1F23;padding-top:6px"><b>4</b> Price &amp; options</div>
-        ${terms.length ? '<div style="border-top:3px solid #1C1F23;padding-top:6px"><b>5</b> What\'s included</div>' : ''}
+        ${extra ? `<div style="border-top:3px solid #1C1F23;padding-top:6px"><b>5</b> ${terms.length ? 'What\'s included' : 'Our work'}</div>` : ''}
         <div style="border-top:3px solid #1C1F23;padding-top:6px"><b>${NP}</b> Guarantee &amp; sign</div>
       </div>
       ${foot(1)}
@@ -1453,19 +1471,23 @@ function renderProposal(job) {
       ${T.map(t => `<div class="tier ${t.f.id === fin.id ? 'on' : ''}">${t.f.id === fin.id ? '<span class="badge">QUOTED</span>' : ''}<div style="height:28px;border-radius:6px;background:${t.f.color};margin-bottom:6px"></div><b style="font-size:14px">${t.f.name}</b><div style="font-size:12.5px;color:#3C4047">${t.f.desc}</div><div class="disp" style="font-weight:700;font-size:18px;margin-top:3px">${money(t.total)}</div></div>`).join('')}
     </div></div>
     <div style="display:flex;gap:14px;font-size:13.5px">
-      <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:10px 14px"><b>Payment schedule</b><div>${P.dep1}% deposit to book your dates</div><div>${P.dep2}% on pour day · ${P.dep3}% on completion</div></div>
+      <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:10px 14px"><b>Payment schedule</b><div>${P.dep1}% deposit to book your dates</div><div>${P.dep2}% on pour day · ${P.dep3}% on completion</div>${P.freeCancel ? '<div>Cancel free, for any reason, before we start.</div>' : ''}</div>
       <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:10px 14px"><b>Measured remotely, confirmed on site</b><div>If the area differs by more than 5% at the site check, we adjust at the same unit prices — in writing, before work starts.</div></div>
     </div>
     ${foot(4)}
   </div></section>
 
-  ${terms.length ? `<!-- PAGE 5 WHAT'S INCLUDED -->
+  ${extra ? `<!-- PAGE 5 WHAT'S INCLUDED / OUR WORK -->
   <section class="page"><div class="pad">
     ${head}
-    <div><div class="kicker">05 · WHAT'S INCLUDED</div><h2>Everything in your price</h2><div style="font-size:14.5px;color:#3C4047">No surprise add-ons: this is the full list of what we do.</div></div>
+    ${terms.length ? `<div><div class="kicker">05 · WHAT'S INCLUDED</div><h2>Everything in your price</h2><div style="font-size:14.5px;color:#3C4047">No surprise add-ons: this is the full list of what we do.</div></div>` : `<div><div class="kicker">05 · OUR WORK</div><h2>Recent jobs by our crews</h2></div>`}
     <div style="column-count:2;column-gap:30px;font-size:14px;line-height:1.45;color:#2A2D31">
       ${terms.map(t => `<div style="break-inside:avoid;margin-bottom:16px">${t.title ? `<div class="disp" style="font-weight:700;font-size:17px;color:#1C1F23;margin-bottom:6px;border-bottom:2px solid #1C1F23;padding-bottom:3px">${esc(t.title)}</div>` : ''}${t.paras.map(x => x.bullet ? `<div style="display:flex;gap:9px;padding:3px 0"><span style="color:#2F8F5B;font-weight:700;flex:none">✓</span><span>${esc(x.text)}</span></div>` : `<p style="margin:0 0 6px">${esc(x.text)}</p>`).join('')}</div>`).join('')}
     </div>
+    ${proof.length ? `<div>${terms.length ? '<div class="disp" style="font-weight:700;font-size:17px;margin-bottom:8px">Recent jobs by our crews</div>' : ''}
+      <div style="display:grid;grid-template-columns:repeat(${terms.length ? Math.min(proof.length, 2) : (proof.length === 1 ? 1 : 2)},1fr);gap:10px">
+        ${proof.map(ph => `<figure style="margin:0"><img data-proof="${ph.id}" alt="${esc(ph.caption || 'Recent concrete job')}" style="width:100%;height:${terms.length ? (proof.length > 2 ? 150 : 250) : (proof.length > 2 ? 330 : 600)}px;object-fit:cover;border-radius:10px;display:block;background:#E4E2DC">${ph.caption ? `<figcaption style="font-size:12px;color:#5B6068;margin-top:4px">${esc(ph.caption)}</figcaption>` : ''}</figure>`).join('')}
+      </div></div>` : ''}
     ${foot(5)}
   </div></section>` : ''}
 
@@ -1476,7 +1498,7 @@ function renderProposal(job) {
     <div style="display:flex;gap:14px">
       <div style="flex:1.3;background:#1C1F23;color:#fff;border-radius:12px;padding:16px 18px">
         <div class="disp" style="font-weight:700;font-size:21px">On-time guarantee</div>
-        <div style="font-size:14px;margin-top:8px;line-height:1.5">If your project is not finished by <b>${completion ? fmtDate(completion) : '[completion date]'}</b>, we refund <b>${P.guaranteePct}% of your price — ${money(gAmt)}</b>. Paid within 14 days, by check or as a credit off your final payment.</div>
+        <div style="font-size:14px;margin-top:8px;line-height:1.5">If we don't start by <b>${startTxt}</b> and finish by <b>${doneTxt}</b>, we pay you <b>${money(gAmt)}</b>. Paid within 14 days, by check or as a credit off your final payment.</div>
       </div>
       <div style="flex:1;border:2px solid #1C1F23;border-radius:12px;padding:16px 18px">
         <div class="disp" style="font-weight:700;font-size:19px;line-height:1.15">${P.warrantyYears}-year workmanship warranty</div>
@@ -1487,13 +1509,16 @@ function renderProposal(job) {
       <div class="disp" style="font-weight:700;font-size:15px;color:#1C1F23;margin-bottom:3px">How the on-time guarantee works</div>
       <div><b>"Finished"</b> means the concrete is poured, finished, joints cut, forms removed and the site cleaned up. Curing time and the sealer visit are not counted.</div>
       <div style="margin-top:4px"><b>The date moves day-for-day</b> only for things outside our control: rain, frozen ground or overnight lows forecast below 40°F; changes you ask for; permit, inspection or utility-locate delays; buried debris or soil problems found during digging; or the work area being blocked. We tell you in writing the same day if the date moves, and why.</div>
-      <div style="margin-top:4px">One refund per project, capped at ${P.guaranteePct}% of the contract price. The warranty does not cover ordinary hairline or shrinkage cracks, color variation, soil movement not caused by our work, weathering, de-icing salts, not following the curing instructions, overweight vehicles, tree roots, or damage by others.</div>
+      <div style="margin-top:4px">One payment per project, ${money(gAmt)} total. The warranty does not cover ordinary hairline or shrinkage cracks, color variation, soil movement not caused by our work, weathering, de-icing salts, not following the curing instructions, overweight vehicles, tree roots, or damage by others.</div>
     </div>
     <div style="border-top:2px solid #1C1F23;padding-top:12px;display:flex;flex-direction:column;gap:10px">
       <div class="disp" style="font-weight:700;font-size:19px">Accept this proposal</div>
-      <div style="display:flex;gap:18px;font-size:13.5px;flex-wrap:wrap">${T.map(t => `<span><span class="box"></span>${t.f.name} · ${money(t.total)}</span>`).join('')}</div>
-      <div style="font-size:12.5px;color:#3C4047">Signing books your start date of <b>${job.startDate ? fmtDate(job.startDate) : '[start date]'}</b> and guaranteed completion of <b>${completion ? fmtDate(completion) : '[completion date]'}</b>. Valid until ${fmtDate(valid)}.</div>
-      <div style="display:flex;gap:40px;margin-top:30px"><div style="flex:1;border-top:1px solid #1C1F23;padding-top:5px;font-size:12.5px;color:#5B6068">Customer signature · date</div><div style="flex:1;border-top:1px solid #1C1F23;padding-top:5px;font-size:12.5px;color:#5B6068">${ph(P.company, 'Your company')} · date</div></div>
+      <div style="display:flex;gap:18px;font-size:13.5px;flex-wrap:wrap">${T.map(t => `<span><span class="box" style="${sig && sig.tier === t.f.id ? 'background:#1C1F23;box-shadow:inset 0 0 0 2px #fff' : ''}"></span>${t.f.name} · ${money(t.total)}</span>`).join('')}</div>
+      <div style="font-size:12.5px;color:#3C4047">${job.startDate ? `Signing books your start date of <b>${fmtDate(job.startDate)}</b> and guaranteed completion of <b>${doneTxt}</b>.` : 'Signing books your project; we confirm your start and finish dates with you in writing.'} Valid until ${fmtDate(valid)}.${P.freeCancel ? ' <b>Free cancellation:</b> cancel for any reason before work starts and your deposit is refunded in full.' : ''}</div>
+      <div style="display:flex;gap:40px;margin-top:${sig ? 6 : 30}px;align-items:flex-end">
+        <div style="flex:1">${sig ? `<img src="${sig.sig}" alt="Customer signature" style="height:64px;display:block">` : ''}<div style="border-top:1px solid #1C1F23;padding-top:5px;font-size:12.5px;color:#5B6068">${sig ? `<b style="color:#1C1F23">${esc(sig.name)}</b> · signed ${esc(sig.when)}` : 'Customer signature · date'}</div></div>
+        <div style="flex:1"><div style="border-top:1px solid #1C1F23;padding-top:5px;font-size:12.5px;color:#5B6068">${ph(P.company, 'Your company')} · date</div></div>
+      </div>
     </div>
     ${foot(NP)}
   </div></section>
@@ -1502,6 +1527,7 @@ function renderProposal(job) {
   fitPages();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitPages);
   hydrateSat($('#tab'));
+  document.querySelectorAll('img[data-proof]').forEach(im => idb.get('proof:' + im.dataset.proof).then(d => { if (d) { im.src = d; im.onload = fitPages; } }));
   idb.get('after:' + job.id).then(d => {
     if (d && ((job.trace || []).length || job.photoFit) && $('#heroWrap')) {
       $('#heroWrap').innerHTML = `<img class="hero" src="${d}" alt="Preview of the home with the new concrete">`;
@@ -1509,6 +1535,10 @@ function renderProposal(job) {
     }
   });
   const upd = (k) => e => { job[k] = e.target.value; touch(job); renderProposal(job); };
+  $('#pprice').onchange = e => { job.price = Math.max(0, parseFloat(e.target.value) || 0); job.priceFin = job.finish || 'broom'; touch(job); refreshHeaderTotal(job); renderProposal(job); };
+  $('#prefund').onchange = e => { job.refund = Math.max(0, parseFloat(e.target.value) || 0); touch(job); renderProposal(job); };
+  if ($('#signnow')) $('#signnow').onclick = () => signModal(job);
+  if ($('#unsign')) $('#unsign').onclick = () => { if (confirm('Remove the customer signature from this proposal?')) { delete job.signed; touch(job); renderProposal(job); } };
   $('#terms').onchange = e => { job.includes = e.target.value.trim(); touch(job); renderProposal(job); $('#terms').closest('details').open = true; };
   $('#sd').onchange = upd('startDate'); $('#cd').onchange = upd('completionDate'); $('#pd').onchange = upd('proposalDate'); $('#sb').onchange = upd('signBy');
   const app = window.slabcalc;
@@ -1526,6 +1556,51 @@ function renderProposal(job) {
       else if (r && r.error) toast('Could not save the PDF: ' + r.error);
     } else window.print();
   };
+}
+/* customer signs on the spot (phone or tablet): pick a finish, type name, sign with a finger */
+function signModal(job) {
+  const T = tiers(job), P = S(), cur = job.finish || 'broom';
+  const bg = document.createElement('div'); bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal" role="dialog" aria-label="Sign proposal" style="width:min(640px,100%)">
+    <h2 style="margin:0 0 4px">Accept your proposal</h2>
+    <div class="small muted" style="margin-bottom:12px">${esc(projectTitle(job))} · ${esc(job.address || '')}</div>
+    <div class="small" style="font-weight:600;margin-bottom:6px">1. Choose your finish</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:12px">${T.map(t => `<button type="button" class="chip" data-tier="${t.f.id}" aria-pressed="${t.f.id === cur}" style="height:auto;min-height:64px;border-radius:10px;margin:0;display:flex;flex-direction:column;align-items:flex-start;padding:8px 10px"><b>${t.f.name}</b><span class="small">${t.f.desc}</span><b>${money(t.total)}</b></button>`).join('')}</div>
+    <label class="f" style="margin-bottom:10px">2. Your full name<input id="sgname" autocomplete="name" value="${esc(job.name && !/\d/.test(job.name) ? job.name : '')}" style="font-size:18px;height:48px"></label>
+    <div class="small" style="font-weight:600;margin-bottom:6px">3. Sign with your finger</div>
+    <div style="position:relative"><canvas id="sgpad" style="width:100%;height:180px;border:2px dashed #A8A49C;border-radius:10px;touch-action:none;background:#FAFAF8;display:block"></canvas>
+      <button type="button" class="btn sm" id="sgclear" style="position:absolute;right:8px;top:8px">Clear</button></div>
+    <label class="row small" style="margin:12px 0;gap:10px;align-items:flex-start;flex-wrap:nowrap"><input type="checkbox" id="sgok" style="width:22px;height:22px;flex:none"> <span>I accept this proposal at the price shown for the finish I chose, including the work described and the guarantee and warranty terms.${P.freeCancel ? ' I can cancel free, for any reason, before work starts.' : ''}</span></label>
+    <div class="row" style="justify-content:flex-end"><button class="btn" id="sgcancel">Cancel</button><button class="btn primary" id="sgdo" disabled style="height:48px;min-width:140px">Sign</button></div>
+  </div>`;
+  document.body.appendChild(bg);
+  let tier = cur, drawn = false;
+  const cv = bg.querySelector('#sgpad'), ctx = cv.getContext('2d');
+  const fit = () => { const r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1; cv.width = r.width * d; cv.height = r.height * d; ctx.setTransform(d, 0, 0, d, 0, 0); ctx.lineWidth = 2.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#1C2A5A'; drawn = false; check(); };
+  const check = () => { bg.querySelector('#sgdo').disabled = !(drawn && bg.querySelector('#sgname').value.trim().length > 1 && bg.querySelector('#sgok').checked && tier); };
+  let last = null;
+  const pos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  cv.onpointerdown = e => { cv.setPointerCapture(e.pointerId); last = pos(e); ctx.beginPath(); ctx.arc(last[0], last[1], 1.2, 0, 7); ctx.fillStyle = '#1C2A5A'; ctx.fill(); e.preventDefault(); };
+  cv.onpointermove = e => { if (!last) return; const p = pos(e); ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); last = p; if (!drawn) { drawn = true; check(); } e.preventDefault(); };
+  cv.onpointerup = cv.onpointercancel = () => { last = null; };
+  bg.querySelector('#sgclear').onclick = fit;
+  bg.querySelectorAll('[data-tier]').forEach(b => b.onclick = () => { tier = b.dataset.tier; bg.querySelectorAll('[data-tier]').forEach(x => x.setAttribute('aria-pressed', x === b)); check(); });
+  bg.querySelector('#sgname').oninput = check; bg.querySelector('#sgok').onchange = check;
+  const close = () => bg.remove();
+  bg.querySelector('#sgcancel').onclick = close;
+  bg.querySelector('#sgdo').onclick = () => {
+    /* trim the signature to its ink so it prints at a sensible size */
+    const d = ctx.getImageData(0, 0, cv.width, cv.height).data; let x0 = cv.width, y0 = cv.height, x1 = 0, y1 = 0;
+    for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) if (d[(y * cv.width + x) * 4 + 3] > 20) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    const pad = 8, w = Math.max(1, x1 - x0 + 2 * pad), h = Math.max(1, y1 - y0 + 2 * pad), out = document.createElement('canvas'); out.width = w; out.height = h;
+    out.getContext('2d').drawImage(cv, x0 - pad, y0 - pad, w, h, 0, 0, w, h);
+    const now = new Date();
+    job.finish = tier;
+    job.signed = { name: bg.querySelector('#sgname').value.trim(), tier, total: T.find(t => t.f.id === tier).total, sig: out.toDataURL('image/png'), at: now.toISOString(), when: now.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) };
+    if (/^\d/.test(job.name || '')) job.name = job.signed.name;
+    touch(job); close(); renderJob(job, 'proposal'); toast('Signed — now tap Save PDF');
+  };
+  requestAnimationFrame(fit);
 }
 /* "# Title" starts a group, "- item" is a ✓ line, blank lines split paragraphs */
 function parseTerms(txt) {
@@ -1660,7 +1735,7 @@ function renderSubRequest(job) {
   fitPages();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitPages);
   hydrateSat($('#tab'));
-  $('#sprice').onchange = e => { job.subPrice = Math.max(0, parseFloat(e.target.value) || 0); touch(job); refreshHeaderTotal(job); renderSubRequest(job); };
+  $('#sprice').onchange = e => { job.subPrice = Math.max(0, parseFloat(e.target.value) || 0); job.subFin = job.finish || 'broom'; touch(job); refreshHeaderTotal(job); renderSubRequest(job); };
   $('#sname').onchange = e => { sub.name = e.target.value.trim(); touch(job); renderSubRequest(job); };
   $('#sdue').onchange = e => { sub.due = e.target.value; touch(job); renderSubRequest(job); };
   $('#snote').onchange = e => { sub.notes = e.target.value; touch(job); renderSubRequest(job); };
@@ -1707,6 +1782,10 @@ function renderSettings() {
     <div class="card"><h3 style="margin-top:0">Steel, forms &amp; labor</h3><div class="grid2">${f('rebarSqft', 'Rebar $ / sq ft')}${f('dowelFlat', 'Garage tie-in dowels $')}${f('formsLf', 'Forms $ / linear ft')}${f('laborSqft', 'Labor $ / sq ft')}${f('taxPct', 'Sales tax % (materials)')}${f('markupPct', 'Overhead & profit %')}</div></div>`}
     <div class="card"><h3 style="margin-top:0">Finish upgrades ($ / sq ft)</h3><div class="grid2">${f('fin_broom', 'Broom (standard)')}${f('fin_charcoal', 'Charcoal tint')}${f('fin_aggregate', 'Exposed aggregate')}${f('fin_stamped', 'Stamped')}</div></div>
     <div class="card"><h3 style="margin-top:0">Guarantee &amp; terms</h3><div class="grid2">${f('guaranteePct', 'On-time refund %')}${f('warrantyYears', 'Workmanship warranty (years)')}${f('workDays', 'Typical job length (work days)')}${f('validDays', 'Proposal valid (days)')}${f('dep1', 'Deposit %')}${f('dep2', 'Due on pour day %')}${f('dep3', 'Due on completion %')}</div></div>
+    <div class="card" style="grid-column:1/-1"><h3 style="margin-top:0">Proof photos (recent jobs)</h3>
+      <div class="small muted" style="margin-bottom:8px">Up to 4 print on page 5 of every proposal. Use photos you have permission to use. JPG or PNG; iPhone HEIC photos open in Safari and the Mac app.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px" id="proofgrid">${(P.proof || []).map((ph, i) => `<div style="border:1px solid var(--line, #D5D2CC);border-radius:10px;padding:6px"><img data-proof="${ph.id}" alt="" style="width:100%;height:120px;object-fit:cover;border-radius:6px;display:block;background:#E4E2DC"><input type="text" data-pc="${i}" value="${esc(ph.caption || '')}" placeholder="Caption (optional)" style="width:100%;margin-top:6px"><div class="row" style="margin-top:4px;gap:4px">${i > 0 ? `<button class="btn sm" data-pu="${i}" title="Move earlier">←</button>` : ''}<button class="btn sm danger" data-pd="${i}">Remove</button></div></div>`).join('')}</div>
+      <label class="btn" style="margin-top:10px;display:inline-flex">+ Add photos<input type="file" accept="image/*" multiple id="proofadd" hidden></label></div>
     <div class="card" style="grid-column:1/-1"><h3 style="margin-top:0">Bonuses (shown on the price page)</h3>
       <div style="display:grid;gap:8px">${P.bonuses.map((b, i) => `<div class="row" style="flex-wrap:nowrap"><input type="text" data-b="${i}" data-bf="name" value="${esc(b.name)}" placeholder="Bonus" style="flex:3"><input type="text" data-b="${i}" data-bf="value" value="${esc(b.value)}" placeholder="Value, e.g. $350" style="flex:1"></div>`).join('')}</div>
       <div class="small muted" style="margin-top:6px">Leave a bonus blank to hide it.</div></div>
@@ -1715,6 +1794,29 @@ function renderSettings() {
   document.querySelectorAll('[data-k]').forEach(i => i.onchange = () => { P[i.dataset.k] = i.type === 'number' ? (parseFloat(i.value) || 0) : i.value; save(); toast('Saved'); });
   document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { P.pricingMode = b.dataset.mode; save(); renderSettings(); toast(b.dataset.mode === 'sqft' ? 'Pricing per sq ft' : 'Itemized pricing'); });
   document.querySelectorAll('[data-b]').forEach(i => i.onchange = () => { P.bonuses[+i.dataset.b][i.dataset.bf] = i.value; save(); toast('Saved'); });
+  P.proof = P.proof || [];
+  document.querySelectorAll('#proofgrid img[data-proof]').forEach(im => idb.get('proof:' + im.dataset.proof).then(d => { if (d) im.src = d; }));
+  document.querySelectorAll('[data-pc]').forEach(i => i.onchange = () => { P.proof[+i.dataset.pc].caption = i.value.trim(); save(); toast('Saved'); });
+  document.querySelectorAll('[data-pd]').forEach(b => b.onclick = () => { const [ph] = P.proof.splice(+b.dataset.pd, 1); idb.del('proof:' + ph.id); save(); renderSettings(); });
+  document.querySelectorAll('[data-pu]').forEach(b => b.onclick = () => { const i = +b.dataset.pu; [P.proof[i - 1], P.proof[i]] = [P.proof[i], P.proof[i - 1]]; save(); renderSettings(); });
+  $('#proofadd').onchange = async e => {
+    let n = 0;
+    for (const f of e.target.files) {
+      const url = await shrinkImage(f, 1600).catch(() => null);
+      if (!url) { toast(`Couldn't read ${f.name} — try saving it as JPG`); continue; }
+      const id = uid(); await idb.set('proof:' + id, url); P.proof.push({ id, caption: '' }); n++;
+    }
+    save(); renderSettings(); if (n) toast(`Added ${n} photo${n > 1 ? 's' : ''}`);
+  };
+}
+/* read an image file and return a JPEG data URL no wider/taller than max px */
+function shrinkImage(file, max) {
+  return new Promise((res, rej) => {
+    const u = URL.createObjectURL(file), im = new Image();
+    im.onload = () => { const k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight)); const c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u); res(c.toDataURL('image/jpeg', 0.85)); };
+    im.onerror = () => { URL.revokeObjectURL(u); rej(); };
+    im.src = u;
+  });
 }
 
 route();
