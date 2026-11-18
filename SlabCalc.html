@@ -77,14 +77,21 @@ ol.plan .n{width:26px;height:26px;border-radius:50%;background:var(--ink);color:
 .tag.add{background:#FDECEC;color:#8A1F1F}.tag.save{background:#EEF4EC;color:#2B4A25}.tag.opt{background:#E8EEF9;color:#1E3F7A}
 
 /* map */
-#map{height:640px;border-radius:12px;border:1px solid #C9C6BF;background:#5E7448}
+#map{height:min(640px,calc(100vh - 240px));min-height:420px;border-radius:12px;border:1px solid #C9C6BF;background:#5E7448}
 .maptools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
-.hint{background:rgba(28,31,35,.9);color:#fff;border-radius:8px;padding:8px 12px;font-size:13px}
+.hint .btn:not(.primary){color:#1C1F23;background:#fff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.hint{background:rgba(28,31,35,.94);color:#fff;border-radius:10px;padding:10px 14px;font-size:14px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
 .leaflet-tooltip.plabel{background:rgba(28,31,35,.92);color:#fff;border:none;border-radius:8px;padding:6px 10px;font:12px/1.35 Inter,sans-serif;box-shadow:none}
 .leaflet-tooltip.plabel b{font-size:13px}
 .leaflet-tooltip.plabel:before{display:none}
 .elabel{position:absolute;transform:translate(-50%,-50%);background:#fff;color:#1C1F23;font:600 11.5px/1.2 Inter,sans-serif;padding:2px 6px;border-radius:5px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.35);pointer-events:none}
-.vtx{width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.vtx{width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.vhit{width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:move}
+.vhit:hover .vtx{transform:scale(1.25)}
+.vmid{width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:copy}
+.vmid span{width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.75);border:2px solid var(--accent);font:700 10px/8px Inter,sans-serif;color:var(--accent);text-align:center}
+.vmove{width:34px;height:34px;border-radius:50%;background:#1C1F23;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;cursor:grab;box-shadow:0 1px 4px rgba(0,0,0,.5);border:2px solid #fff}
 .pourlist button{width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;gap:8px;align-items:center}
 .pourlist button.on{border:2px solid var(--ink)}
 .dot{width:10px;height:10px;border-radius:3px;flex:none}
@@ -788,7 +795,7 @@ function renderMapTab(job) {
       </div>
       <div style="position:relative">
         <div id="map"></div>
-        <div id="drawhint" class="hint" style="position:absolute;left:12px;bottom:12px;z-index:900;display:none;max-width:420px"></div>
+        <div id="drawhint" class="hint" style="position:absolute;left:56px;top:12px;right:12px;z-index:900;display:none;max-width:560px"></div>
       </div>
       <div class="small muted" style="margin-top:6px">Satellite imagery is good to about ±1 ft. Zoom all the way in. Driveways and patios: click each corner, then click the first point (or Finish). Walkways: click along the middle of the walk, then set the width. Drag the white dots to adjust.</div>
     </section>
@@ -831,22 +838,45 @@ function renderMapTab(job) {
       const poly = concrete
         ? L.polygon(p.pts, { color: on ? '#fff' : c, weight: on ? 3 : 2, fillColor: fin.color, fillOpacity: 0.92 }).addTo(layer)
         : L.polygon(p.pts, { color: on ? '#fff' : c, weight: on ? 3 : 2, fillColor: c, fillOpacity: on ? 0.45 : 0.32 }).addTo(layer);
-      poly.on('click', () => { if (!drawing) { selId = p.id; drawPours(); drawPanel(); } });
+      const pick = () => { if (!drawing && selId !== p.id) { selId = p.id; drawPours(); drawPanel(); } };
+      poly.on('click', pick);
+      /* thin walks are hard to hit: an invisible wide line along the path selects them too */
+      if (p.path) L.polyline(p.path, { weight: 28, opacity: 0, color: '#000' }).on('click', pick).addTo(layer);
       const jl = m.joints.map(seg => L.polyline(seg, concrete ? { color: '#3B3D40', weight: 2, opacity: 0.85, interactive: false } : { color: '#fff', weight: 2, dashArray: '6 5', interactive: false }).addTo(layer));
       if (p.path && on && !drawing) L.polyline(p.path, { color: '#fff', weight: 1, opacity: 0.6, dashArray: '2 4', interactive: false }).addTo(layer);
       const label = `<b>${esc(p.name)}</b><br>${m.isPath ? num(m.L) + ' ft long × ' + num(m.W, 1) + ' ft wide' : num(m.L) + ' × ' + num(m.W) + ' ft'} · ${num(m.area)} sq ft<br>${m.panels} panels · ${p.thick}″ · ${num(m.yd, 2)} yd³`;
-      poly.bindTooltip(label, { permanent: on || !concrete, direction: 'center', className: 'plabel' });
+      const small = m.W < 8 || m.isPath;
+      /* thin pieces: label on hover only, so it never covers the dots you need to grab */
+      poly.bindTooltip(label, { permanent: !small && (on || !concrete), sticky: small, direction: small ? 'top' : 'center', offset: small ? [0, -18] : [0, 0], className: 'plabel' });
       if (on && !drawing) {
         const src = p.path || p.pts, minPts = p.path ? 2 : 3;
         const live = () => { const mm = measurePour(p); poly.setLatLngs(p.pts); jl.forEach(l => layer.removeLayer(l)); jl.length = 0; if (mm) mm.joints.forEach(seg => jl.push(L.polyline(seg, { color: concrete ? '#3B3D40' : '#fff', weight: 2, interactive: false }).addTo(layer))); };
         if (!p.path) m.xy.forEach((a, i) => { const b = m.xy[(i + 1) % m.xy.length], len = Math.hypot(b[0] - a[0], b[1] - a[1]); if (len < 1.5) return; L.marker(m.frame.toLL([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]), { interactive: false, keyboard: false, icon: L.divIcon({ className: '', iconSize: [0, 0], html: `<span class="elabel">${num(len, 1)} ft</span>` }) }).addTo(vtxLayer); });
         src.forEach((pt, i) => {
-          const mk = L.marker(pt, { draggable: true, icon: L.divIcon({ className: '', html: '<div class="vtx"></div>', iconSize: [14, 14], iconAnchor: [7, 7] }) }).addTo(vtxLayer);
+          const mk = L.marker(pt, { draggable: true, title: 'Drag to move · right-click to delete', icon: L.divIcon({ className: '', html: '<div class="vhit"><div class="vtx"></div></div>', iconSize: [32, 32], iconAnchor: [16, 16] }) }).addTo(vtxLayer);
           mk.on('drag', ev => { src[i] = [ev.latlng.lat, ev.latlng.lng]; live(); });
           const resq = () => { if (p.square && !p.path) p.pts = squarePts(p.pts); };
           mk.on('dragend', () => { resq(); touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); });
           mk.on('contextmenu', () => { if (src.length > minPts) { src.splice(i, 1); resq(); touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); } });
         });
+        /* + handles between points: click to add a corner (or a bend in a walk) there */
+        const segs = p.path ? src.length - 1 : src.length;
+        for (let i = 0; i < segs; i++) {
+          const a = src[i], b = src[(i + 1) % src.length];
+          const t = p.path ? 0.5 : 0.3; /* off-centre on polygons so it doesn't sit on the side-length label */
+          const mid = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+          if (map.latLngToContainerPoint(a).distanceTo(map.latLngToContainerPoint(b)) < 40) continue;
+          L.marker(mid, { title: 'Click to add a point here', icon: L.divIcon({ className: '', html: '<div class="vmid"><span>+</span></div>', iconSize: [24, 24], iconAnchor: [12, 12] }) })
+            .on('click', () => { src.splice(i + 1, 0, mid); if (!p.path) p.square = false; touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); }).addTo(vtxLayer);
+        }
+        /* drag the dark handle to move the whole pour */
+        const cLL = p.path ? p.path[Math.floor((p.path.length - 1) / 2)].map((v, k) => (v + p.path[Math.ceil((p.path.length - 1) / 2)][k]) / 2) : m.frame.toLL([m.xy.reduce((t, v) => t + v[0], 0) / m.xy.length, m.xy.reduce((t, v) => t + v[1], 0) / m.xy.length]);
+        let orig = null;
+        L.marker(cLL, { draggable: true, title: 'Drag to move this pour', icon: L.divIcon({ className: '', html: '<div class="vmove">✥</div>', iconSize: [34, 34], iconAnchor: [17, -34] }) })
+          .on('dragstart', ev => { orig = { ll: ev.target.getLatLng(), pts: p.pts.map(v => v.slice()), path: p.path ? p.path.map(v => v.slice()) : null }; vtxLayer.eachLayer(l => { if (l !== ev.target) vtxLayer.removeLayer(l); }); })
+          .on('drag', ev => { const d = [ev.latlng.lat - orig.ll.lat, ev.latlng.lng - orig.ll.lng]; if (orig.path) { p.path = orig.path.map(v => [v[0] + d[0], v[1] + d[1]]); } p.pts = orig.pts.map(v => [v[0] + d[0], v[1] + d[1]]); live(); })
+          .on('dragend', () => { touch(job); drawPours(); drawPanel(); refreshHeaderTotal(job); })
+          .addTo(vtxLayer);
       }
     });
   }
@@ -864,7 +894,7 @@ function renderMapTab(job) {
     $('#drawhint').innerHTML = (drawing.path
       ? `Drawing a <b>walkway</b>: click along the <b>middle</b> of the walk, end to end, with a click at each bend (${n} so far). Set the width after. `
       : `Drawing a <b>${KIND[drawing.kind].name.toLowerCase()}</b>: click each corner (${n} so far). `) +
-      `<button class="btn sm" id="dfin" ${n < need ? 'disabled' : ''} style="margin-left:6px">Finish</button> <button class="btn sm" id="dundo" ${n ? '' : 'disabled'}>Undo</button> <button class="btn sm" id="dcan">Cancel</button>`;
+      `<div style="margin-top:6px;font-size:12.5px;opacity:.85">${drawing.path ? 'To finish: double-click the last point, click it again, press Enter, or' : 'To finish: click the first point, press Enter, or'}</div><button class="btn sm primary" id="dfin" ${n < need ? 'disabled' : ''} style="margin-top:6px">✓ Finish</button> <button class="btn sm" id="dundo" ${n ? '' : 'disabled'}>Undo</button> <button class="btn sm" id="dcan">Cancel</button>`;
     $('#dfin').onclick = finishDraw; $('#dundo').onclick = undoPt; $('#dcan').onclick = cancelDraw;
   }
   function undoPt() { drawing.pts.pop(); drawing.line.setLatLngs(drawing.pts); drawing.marks.clearLayers(); drawing.pts.forEach(pt => L.circleMarker(pt, { radius: 5, color: '#fff', fillColor: KIND[drawing.kind].color, fillOpacity: 1, weight: 2 }).addTo(drawing.marks)); hint(); }
@@ -874,7 +904,10 @@ function renderMapTab(job) {
     map.doubleClickZoom.enable(); $('#drawhint').style.display = 'none'; drawPours();
   }
   function finishDraw() {
-    if (!drawing || drawing.pts.length < (drawing.path ? 2 : 3)) return;
+    if (!drawing) return;
+    /* double-clicks and repeat clicks leave stacked points: drop any within a few pixels of the previous one */
+    drawing.pts = drawing.pts.filter((pt, i, a) => i === 0 || map.latLngToContainerPoint(pt).distanceTo(map.latLngToContainerPoint(a[i - 1])) > 6);
+    if (drawing.pts.length < (drawing.path ? 2 : 3)) { hint(); return; }
     const A = Object.assign({}, DEFAULT_ANSWERS, job.answers);
     const kind = drawing.kind;
     const count = job.pours.filter(p => p.kind === kind).length;
@@ -887,10 +920,9 @@ function renderMapTab(job) {
   map.on('click', e => {
     if (!drawing) return;
     const pt = [e.latlng.lat, e.latlng.lng];
-    if (!drawing.path && drawing.pts.length >= 3) {
-      const first = map.latLngToContainerPoint(drawing.pts[0]), here = map.latLngToContainerPoint(e.latlng);
-      if (first.distanceTo(here) < 12) { finishDraw(); return; }
-    }
+    const here = map.latLngToContainerPoint(e.latlng);
+    if (!drawing.path && drawing.pts.length >= 3 && map.latLngToContainerPoint(drawing.pts[0]).distanceTo(here) < 14) { finishDraw(); return; }
+    if (drawing.path && drawing.pts.length >= 2 && map.latLngToContainerPoint(drawing.pts[drawing.pts.length - 1]).distanceTo(here) < 14) { finishDraw(); return; }
     drawing.pts.push(pt);
     drawing.line.setLatLngs(drawing.pts);
     L.circleMarker(pt, { radius: 5, color: '#fff', fillColor: KIND[drawing.kind].color, fillOpacity: 1, weight: 2 }).addTo(drawing.marks);
@@ -898,6 +930,7 @@ function renderMapTab(job) {
   });
   const onKey = e => { if (!drawing) return; if (e.key === 'Escape') cancelDraw(); if (e.key === 'Enter') finishDraw(); if ((e.key === 'z' && (e.metaKey || e.ctrlKey)) || e.key === 'Backspace') { if (document.activeElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return; e.preventDefault(); undoPt(); } };
   document.addEventListener('keydown', onKey);
+  map.on('dblclick', () => { if (drawing) finishDraw(); });
   cleanup = () => { document.removeEventListener('keydown', onKey); map.remove(); };
   document.querySelectorAll('[data-draw]').forEach(b => b.onclick = () => startDraw(b.dataset.draw));
   $('#viewtog').onclick = () => { concrete = !concrete; $('#viewtog').setAttribute('aria-pressed', concrete); drawPours(); };
