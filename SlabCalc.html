@@ -1335,7 +1335,8 @@ function renderProposal(job) {
   const gAmt = Math.round(E.total * P.guaranteePct / 100);
   const letters = 'ABCDEFGHIJ';
   const head = `<div class="runhead"><span>${ph(P.company, 'Your company')} · Proposal No. ${esc(job.proposalNo || '')}</span><span>${esc(job.name)} · ${ph(job.address, 'Address')}</span></div>`;
-  const foot = n => `<div class="foot"><span>${ph(P.company, 'Your company')} · ${ph(P.phone, 'Phone')}</span><span>Page ${n} of 5</span></div>`;
+  const terms = parseTerms(job.includes), NP = terms.length ? 6 : 5;
+  const foot = n => `<div class="foot"><span>${ph(P.company, 'Your company')} · ${ph(P.phone, 'Phone')}</span><span>Page ${n} of ${NP}</span></div>`;
   const valid = addDays(job.proposalDate || today(), P.validDays);
   const fin = E.fin;
   const bonusRows = (P.bonuses || []).filter(b => b.name).map((b, i) => `<div style="display:flex;justify-content:space-between;gap:12px"><span><b>Bonus ${i + 1} ·</b> ${esc(b.name)}</span><span class="muted">${b.value ? esc(b.value) + ' value' : ''}</span></div>`).join('');
@@ -1353,6 +1354,10 @@ function renderProposal(job) {
     </div>
     <div class="small muted" style="margin-top:8px">Completion defaults to start date + ${P.workDays} working days. Yellow fields are missing — fill them in under <a href="#/settings">Prices &amp; company</a>. <span id="printhint">In the print dialog choose “Save as PDF”, paper Letter, margins None.</span></div>
   </div>
+  <details class="card noprint" style="margin-bottom:16px"><summary style="cursor:pointer;font-weight:600">What's included ${job.includes ? '· shown on page 5' : '· empty (fill it in to print a checklist page)'}</summary>
+    <div class="small muted" style="margin:8px 0">Paste what the sub's price includes, written for the customer. <b># Title</b> on its own line starts a group; <b>- item</b> makes a ✓ line.</div>
+    <textarea id="terms" style="width:100%;min-height:220px;font:13px/1.45 Inter,sans-serif">${esc(job.includes || '')}</textarea>
+  </details>
   ${E.pours.length ? '' : '<div class="card noprint" style="margin-bottom:16px">Outline at least one pour on the map to fill in the proposal.</div>'}
   <div class="pages">
 
@@ -1382,14 +1387,15 @@ function renderProposal(job) {
         <div style="flex:1;border:2px solid #C2560C;border-radius:12px;padding:14px 16px;display:flex;gap:12px">
           <svg width="38" height="38" viewBox="0 0 40 40" aria-hidden="true" style="flex:none"><path d="M20 3 L35 9 V19 C35 28 28 34 20 37 C12 34 5 28 5 19 V9 Z" fill="#FFF1E6" stroke="#C2560C" stroke-width="2.5"/><path d="M13 20 L18 25 L28 14" stroke="#C2560C" stroke-width="3" fill="none"/></svg>
           <div><div class="disp" style="font-weight:700;font-size:18px;line-height:1.2">On time, or ${P.guaranteePct}% back</div>
-          <div style="font-size:13.5px;color:#3C4047">Finished by ${completion ? '<b>' + fmtDate(completion) + '</b>' : '<span class="ph">[completion date]</span>'} or we refund ${money(gAmt)}. Terms on page 5.</div></div>
+          <div style="font-size:13.5px;color:#3C4047">Finished by ${completion ? '<b>' + fmtDate(completion) + '</b>' : '<span class="ph">[completion date]</span>'} or we refund ${money(gAmt)}. Terms on page ${NP}.</div></div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:13.5px">
+      <div style="display:grid;grid-template-columns:repeat(${NP - 1},1fr);gap:8px;font-size:13.5px">
         <div style="border-top:3px solid #1C1F23;padding-top:6px"><b>2</b> Scope &amp; layout</div>
         <div style="border-top:3px solid #1C1F23;padding-top:6px"><b>3</b> How we build it</div>
         <div style="border-top:3px solid #1C1F23;padding-top:6px"><b>4</b> Price &amp; options</div>
-        <div style="border-top:3px solid #1C1F23;padding-top:6px"><b>5</b> Guarantee &amp; sign</div>
+        ${terms.length ? '<div style="border-top:3px solid #1C1F23;padding-top:6px"><b>5</b> What\'s included</div>' : ''}
+        <div style="border-top:3px solid #1C1F23;padding-top:6px"><b>${NP}</b> Guarantee &amp; sign</div>
       </div>
       ${foot(1)}
     </div>
@@ -1453,10 +1459,20 @@ function renderProposal(job) {
     ${foot(4)}
   </div></section>
 
-  <!-- PAGE 5 GUARANTEE -->
+  ${terms.length ? `<!-- PAGE 5 WHAT'S INCLUDED -->
   <section class="page"><div class="pad">
     ${head}
-    <div><div class="kicker">05 · OUR PROMISE</div><h2>You take no risk</h2></div>
+    <div><div class="kicker">05 · WHAT'S INCLUDED</div><h2>Everything in your price</h2><div style="font-size:14.5px;color:#3C4047">No surprise add-ons: this is the full list of what we do.</div></div>
+    <div style="column-count:2;column-gap:30px;font-size:14px;line-height:1.45;color:#2A2D31">
+      ${terms.map(t => `<div style="break-inside:avoid;margin-bottom:16px">${t.title ? `<div class="disp" style="font-weight:700;font-size:17px;color:#1C1F23;margin-bottom:6px;border-bottom:2px solid #1C1F23;padding-bottom:3px">${esc(t.title)}</div>` : ''}${t.paras.map(x => x.bullet ? `<div style="display:flex;gap:9px;padding:3px 0"><span style="color:#2F8F5B;font-weight:700;flex:none">✓</span><span>${esc(x.text)}</span></div>` : `<p style="margin:0 0 6px">${esc(x.text)}</p>`).join('')}</div>`).join('')}
+    </div>
+    ${foot(5)}
+  </div></section>` : ''}
+
+  <!-- GUARANTEE -->
+  <section class="page"><div class="pad">
+    ${head}
+    <div><div class="kicker">0${NP} · OUR PROMISE</div><h2>You take no risk</h2></div>
     <div style="display:flex;gap:14px">
       <div style="flex:1.3;background:#1C1F23;color:#fff;border-radius:12px;padding:16px 18px">
         <div class="disp" style="font-weight:700;font-size:21px">On-time guarantee</div>
@@ -1464,14 +1480,14 @@ function renderProposal(job) {
       </div>
       <div style="flex:1;border:2px solid #1C1F23;border-radius:12px;padding:16px 18px">
         <div class="disp" style="font-weight:700;font-size:19px;line-height:1.15">${P.warrantyYears}-year workmanship warranty</div>
-        <div style="font-size:13.5px;margin-top:8px;line-height:1.5">If a panel settles, heaves, or cracks wider than ⅛″ outside a control joint, we repair or replace it at no charge.</div>
+        <div style="font-size:13.5px;margin-top:8px;line-height:1.5">If a defect comes from how it was installed — a panel settling over poorly compacted base, or a crack wider than ⅛″ outside a control joint — we repair or replace it at no charge.</div>
       </div>
     </div>
     <div style="font-size:12.5px;line-height:1.5;color:#3C4047">
       <div class="disp" style="font-weight:700;font-size:15px;color:#1C1F23;margin-bottom:3px">How the on-time guarantee works</div>
       <div><b>"Finished"</b> means the concrete is poured, finished, joints cut, forms removed and the site cleaned up. Curing time and the sealer visit are not counted.</div>
       <div style="margin-top:4px"><b>The date moves day-for-day</b> only for things outside our control: rain, frozen ground or overnight lows forecast below 40°F; changes you ask for; permit, inspection or utility-locate delays; buried debris or soil problems found during digging; or the work area being blocked. We tell you in writing the same day if the date moves, and why.</div>
-      <div style="margin-top:4px">One refund per project, capped at ${P.guaranteePct}% of the contract price. The warranty does not cover damage from de-icing salt in the first winter, overweight vehicles, tree roots, or ground movement caused by others.</div>
+      <div style="margin-top:4px">One refund per project, capped at ${P.guaranteePct}% of the contract price. The warranty does not cover ordinary hairline or shrinkage cracks, color variation, soil movement not caused by our work, weathering, de-icing salts, not following the curing instructions, overweight vehicles, tree roots, or damage by others.</div>
     </div>
     <div style="border-top:2px solid #1C1F23;padding-top:12px;display:flex;flex-direction:column;gap:10px">
       <div class="disp" style="font-weight:700;font-size:19px">Accept this proposal</div>
@@ -1479,7 +1495,7 @@ function renderProposal(job) {
       <div style="font-size:12.5px;color:#3C4047">Signing books your start date of <b>${job.startDate ? fmtDate(job.startDate) : '[start date]'}</b> and guaranteed completion of <b>${completion ? fmtDate(completion) : '[completion date]'}</b>. Valid until ${fmtDate(valid)}.</div>
       <div style="display:flex;gap:40px;margin-top:30px"><div style="flex:1;border-top:1px solid #1C1F23;padding-top:5px;font-size:12.5px;color:#5B6068">Customer signature · date</div><div style="flex:1;border-top:1px solid #1C1F23;padding-top:5px;font-size:12.5px;color:#5B6068">${ph(P.company, 'Your company')} · date</div></div>
     </div>
-    ${foot(5)}
+    ${foot(NP)}
   </div></section>
   </div>`;
 
@@ -1493,6 +1509,7 @@ function renderProposal(job) {
     }
   });
   const upd = (k) => e => { job[k] = e.target.value; touch(job); renderProposal(job); };
+  $('#terms').onchange = e => { job.includes = e.target.value.trim(); touch(job); renderProposal(job); $('#terms').closest('details').open = true; };
   $('#sd').onchange = upd('startDate'); $('#cd').onchange = upd('completionDate'); $('#pd').onchange = upd('proposalDate'); $('#sb').onchange = upd('signBy');
   const app = window.slabcalc;
   if (app && app.savePDF) { $('#print').textContent = 'Save PDF'; $('#printhint').textContent = 'Saves a letter-size PDF ready to email or print.'; }
@@ -1509,6 +1526,21 @@ function renderProposal(job) {
       else if (r && r.error) toast('Could not save the PDF: ' + r.error);
     } else window.print();
   };
+}
+/* "# Title" starts a group, "- item" is a ✓ line, blank lines split paragraphs */
+function parseTerms(txt) {
+  const out = []; let cur = null, buf = [];
+  const sec = () => cur || (out.push(cur = { title: '', paras: [] }), cur);
+  const flush = () => { if (buf.length) { sec().paras.push({ text: buf.join(' ') }); buf = []; } };
+  String(txt || '').split(/\r?\n/).forEach(line => {
+    const l = line.trim();
+    if (/^#+\s/.test(l)) { flush(); out.push(cur = { title: l.replace(/^#+\s*/, ''), paras: [] }); }
+    else if (/^[-•*✓]\s*/.test(l) && l.length > 1) { flush(); sec().paras.push({ text: l.replace(/^[-•*✓]\s*/, ''), bullet: true }); }
+    else if (!l) flush();
+    else buf.push(l);
+  });
+  flush();
+  return out.filter(t => t.title || t.paras.length);
 }
 /* shrink a page's content (never the page) until it fits on its letter sheet */
 function fitPages() {
