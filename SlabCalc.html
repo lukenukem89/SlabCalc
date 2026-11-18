@@ -670,18 +670,20 @@ function importBackup(file) {
   if (!file) return;
   /* merge: estimates are added or updated by id; prices/company only change if the file has them */
   file.text().then(t => {
-    const d = JSON.parse(t); if (!Array.isArray(d.jobs)) { if (d.proof) d.jobs = []; else throw 0; }
+    const d = JSON.parse(t); if (!Array.isArray(d.jobs)) { if (d.proof || d.settingsPatch) d.jobs = []; else throw 0; }
     let added = 0, updated = 0;
     d.jobs.forEach(j => { if (!j.proposalNo) j.proposalNo = nextProposalNo();
       if (j.photos) { if (j.photos.before) idb.set('before:' + j.id, j.photos.before); if (j.photos.after) idb.set('after:' + j.id, j.photos.after); delete j.photos; } const i = DB.jobs.findIndex(x => x.id === j.id); if (i >= 0) { DB.jobs[i] = j; updated++; } else { DB.jobs.push(j); added++; } });
     if (d.settings) DB.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings);
+    /* a setup file can fill in company details without touching prices */
+    if (d.settingsPatch && typeof d.settingsPatch === 'object') ['company', 'phone', 'email', 'license', 'freeCancel'].forEach(k => { if (k in d.settingsPatch) DB.settings[k] = d.settingsPatch[k]; });
     if (d.proof) Object.entries(d.proof).forEach(([id, data]) => {
       idb.set('proof:' + id, data);
       /* a photos-only file adds to your proof photos without touching prices */
       const P = DB.settings; P.proof = P.proof || [];
       if (!d.settings && !P.proof.some(x => x.id === id)) P.proof.push({ id, caption: (d.proofCaptions || {})[id] || '' });
     });
-    save(); route(); toast(`Imported: ${added} new, ${updated} updated` + (d.proof ? ` · ${Object.keys(d.proof).length} proof photos` : '') + (d.settings ? ' · prices restored' : ''));
+    save(); route(); toast(`Imported: ${added} new, ${updated} updated` + (d.proof ? ` · ${Object.keys(d.proof).length} proof photos` : '') + (d.settingsPatch ? ' · company info updated' : '') + (d.settings ? ' · prices restored' : ''));
   })
     .catch(() => toast('That file is not a SlabCalc backup'));
 }
