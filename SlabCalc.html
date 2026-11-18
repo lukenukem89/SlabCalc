@@ -460,7 +460,7 @@ function workPlan(A) {
   if (A.now === 'gravel') add('Check and reuse existing gravel', 'Good gravel is regraded and topped up instead of hauled away, which saves you money.', 'Saves $', 'save');
   add(`Excavate to ${R.dig}″ and grade`, `Room for ${R.base}″ of base plus the ${R.thick}″ slab, sloped about ¼″ per foot away from the house so water drains.`, 'Excavation');
   if (A.soil === 'soft') add('Stabilize soft ground', 'Over-dig soft spots, lay geotextile fabric and add 2″ extra base so the slab will not sink.', 'Added', 'add');
-  if (A.soil === 'unsure') add('Test the subgrade', 'We probe the ground during the site check; if it is soft we will show you before adding fabric.', 'If needed', 'opt');
+  if (A.soil === 'unsure') add('Check the ground', 'If soft or unsuitable soil turns up while digging, we show you and agree on a written change order before fixing it.', 'If needed', 'opt');
   add(`Lay and compact ${R.base}″ gravel base`, 'Crushed stone compacted in layers with a plate compactor.', 'Base');
   add('Set forms' + (A.slope === 'steep' ? ' and step-downs' : ''), 'Forms are set to finished height and slope.', 'Forms');
   add('Place reinforcement' + (A.tie !== 'none' ? ' and tie-in' : ''),
@@ -679,7 +679,7 @@ function importBackup(file) {
       if (j.photos) { if (j.photos.before) idb.set('before:' + j.id, j.photos.before); if (j.photos.after) idb.set('after:' + j.id, j.photos.after); delete j.photos; } const i = DB.jobs.findIndex(x => x.id === j.id); if (i >= 0) { DB.jobs[i] = j; updated++; } else { DB.jobs.push(j); added++; } });
     if (d.settings) DB.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings);
     /* a setup file can fill in company details without touching prices */
-    if (d.settingsPatch && typeof d.settingsPatch === 'object') ['company', 'phone', 'email', 'license', 'freeCancel'].forEach(k => { if (k in d.settingsPatch) DB.settings[k] = d.settingsPatch[k]; });
+    if (d.settingsPatch && typeof d.settingsPatch === 'object') ['company', 'phone', 'email', 'license', 'freeCancel', 'dep1', 'dep2', 'dep3'].forEach(k => { if (k in d.settingsPatch) DB.settings[k] = d.settingsPatch[k]; });
     if (d.proof) Object.entries(d.proof).forEach(([id, data]) => {
       idb.set('proof:' + id, data);
       /* a photos-only file adds to your proof photos without touching prices */
@@ -1369,6 +1369,8 @@ function renderProposal(job) {
       <label class="f">Sign-by date (bonuses)<input type="date" id="sb" value="${esc(job.signBy || addDays(job.proposalDate || today(), 7))}"></label>
       <label class="f">Customer price<input type="number" min="0" step="any" id="pprice" value="${job.price || ''}" placeholder="${E.pours.length ? Math.round(E.total) : ''}" style="width:120px"></label>
       <label class="f">On-time refund $<input type="number" min="0" step="any" id="prefund" value="${job.refund || ''}" placeholder="${Math.round(E.total * P.guaranteePct / 100)}" style="width:110px"></label>
+      <label class="row small" style="gap:6px;align-self:flex-end;padding-bottom:12px"><input type="checkbox" id="ptiers" ${job.showTiers ? 'checked' : ''}> Offer finish upgrades</label>
+      <label class="row small" style="gap:6px;align-self:flex-end;padding-bottom:12px"><input type="checkbox" id="pbonus" ${job.showBonuses ? 'checked' : ''}> Show bonuses</label>
       <div style="margin-left:auto" class="row">
         ${sig ? `<span class="small">✓ Signed by <b>${esc(sig.name)}</b> <button class="btn sm" id="unsign">Remove</button></span>` : `<button class="btn" id="signnow" style="height:46px">✍︎ Sign now</button>`}
         <button class="btn primary" id="print" style="height:46px">Print / Save as PDF</button>
@@ -1455,8 +1457,6 @@ function renderProposal(job) {
     <div style="display:flex;gap:14px">
       <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.5"><div class="disp" style="font-weight:700;font-size:16px;margin-bottom:2px">What we need from you</div>
         <div>• Cars moved off the work area until we say it's ready</div><div>• An outside water spigot we can use</div><div>• Sprinkler heads and pet-fence lines flagged</div><div>• Kids, pets and visitors off the fresh concrete</div></div>
-      <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.5"><div class="disp" style="font-weight:700;font-size:16px;margin-bottom:2px">What you can count on</div>
-        <div>• A text the evening before each work day</div><div>• Lawn protected under equipment</div><div>• Site left clean at the end of every day</div><div>• Rain-day reschedules confirmed by phone</div></div>
     </div>
     ${foot(3)}
   </div></section>
@@ -1466,17 +1466,17 @@ function renderProposal(job) {
     ${head}
     <div><div class="kicker">04 · PRICE</div><h2>Everything you get</h2></div>
     <table><thead><tr><th>INCLUDED</th><th class="r">PRICE</th></tr></thead><tbody>
-      ${(E.custLines || E.lines).map(l => `<tr><td>${l.label}${l.detail ? ` <span style="color:#5B6068;font-size:12.5px">· ${l.detail}</span>` : ''}</td><td class="r">${money(l.amt)}</td></tr>`).join('')}
+      ${(E.simple ? [{ label: esc(projectTitle(job).replace(/^New /, 'New ')), detail: `${num(E.area)} sq ft · complete, everything on page${extra ? 's 2–5' : 's 2–3'}`, amt: E.total }] : (E.custLines || E.lines)).map(l => `<tr><td>${l.label}${l.detail ? ` <span style="color:#5B6068;font-size:12.5px">· ${l.detail}</span>` : ''}</td><td class="r">${money(l.amt)}</td></tr>`).join('')}
       ${!E.simple && E.tax + E.markup > 0.5 ? `<tr><td>${E.simple ? 'Overhead &amp; profit' : 'Sales tax on materials · overhead &amp; profit'}</td><td class="r">${money(E.tax + E.markup)}</td></tr>` : ''}
       <tr><td style="font-weight:700;font-size:17px;border-bottom:none">Your price</td><td class="r" style="font-weight:700;font-size:17px;border-bottom:none">${money(E.total)}</td></tr>
     </tbody></table>
-    ${bonusRows ? `<div style="border:2px dashed #C2560C;border-radius:12px;padding:12px 16px;background:#FFF8F2"><div class="disp" style="font-weight:700;font-size:17px">Included free when you sign by ${fmtDate(job.signBy || addDays(job.proposalDate || today(), 7))}</div><div style="display:flex;flex-direction:column;gap:3px;font-size:13.5px;margin-top:6px">${bonusRows}</div></div>` : ''}
-    <div><div class="disp" style="font-weight:700;font-size:17px;margin-bottom:10px">Choose your finish</div>
+    ${bonusRows && job.showBonuses ? `<div style="border:2px dashed #C2560C;border-radius:12px;padding:12px 16px;background:#FFF8F2"><div class="disp" style="font-weight:700;font-size:17px">Included free when you sign by ${fmtDate(job.signBy || addDays(job.proposalDate || today(), 7))}</div><div style="display:flex;flex-direction:column;gap:3px;font-size:13.5px;margin-top:6px">${bonusRows}</div></div>` : ''}
+    ${job.showTiers ? `<div><div class="disp" style="font-weight:700;font-size:17px;margin-bottom:10px">Choose your finish</div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
       ${T.map(t => `<div class="tier ${t.f.id === fin.id ? 'on' : ''}">${t.f.id === fin.id ? '<span class="badge">QUOTED</span>' : ''}<div style="height:28px;border-radius:6px;background:${t.f.color};margin-bottom:6px"></div><b style="font-size:14px">${t.f.name}</b><div style="font-size:12.5px;color:#3C4047">${t.f.desc}</div><div class="disp" style="font-weight:700;font-size:18px;margin-top:3px">${money(t.total)}</div></div>`).join('')}
-    </div></div>
+    </div></div>` : ''}
     <div style="display:flex;gap:14px;font-size:13.5px">
-      <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:10px 14px"><b>Payment schedule</b><div>${P.dep1}% deposit to book your dates</div><div>${P.dep2}% on pour day · ${P.dep3}% on completion</div>${P.freeCancel ? '<div>Cancel free, for any reason, before we start.</div>' : ''}</div>
+      <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:10px 14px"><b>Payment schedule</b><div>${P.dep1}% up front (${money(E.total * P.dep1 / 100)}) to book your dates</div><div>${[P.dep2 > 0 ? `${P.dep2}% on pour day` : '', P.dep3 > 0 ? `${P.dep3}% on completion (${money(E.total * P.dep3 / 100)})` : ''].filter(Boolean).join(' · ')}</div>${P.freeCancel ? '<div>Cancel free, for any reason, before we start.</div>' : ''}</div>
       <div style="flex:1;background:#F4F3F0;border-radius:10px;padding:10px 14px"><b>Measured remotely, confirmed on site</b><div>If the area differs by more than 5% at the site check, we adjust at the same unit prices — in writing, before work starts.</div></div>
     </div>
     ${foot(4)}
@@ -1485,7 +1485,7 @@ function renderProposal(job) {
   ${extra ? `<!-- PAGE 5 WHAT'S INCLUDED / OUR WORK -->
   <section class="page"><div class="pad">
     ${head}
-    ${terms.length ? `<div><div class="kicker">05 · WHAT'S INCLUDED</div><h2>Everything in your price</h2><div style="font-size:14.5px;color:#3C4047">No surprise add-ons: this is the full list of what we do.</div></div>` : `<div><div class="kicker">05 · OUR WORK</div><h2>Recent jobs by our crews</h2></div>`}
+    ${terms.length ? `<div><div class="kicker">05 · WHAT'S INCLUDED</div><h2>Everything in your price</h2></div>` : `<div><div class="kicker">05 · OUR WORK</div><h2>Recent jobs by our crews</h2></div>`}
     <div style="column-count:2;column-gap:30px;font-size:14px;line-height:1.45;color:#2A2D31">
       ${terms.map(t => `<div style="break-inside:avoid;margin-bottom:16px">${t.title ? `<div class="disp" style="font-weight:700;font-size:17px;color:#1C1F23;margin-bottom:6px;border-bottom:2px solid #1C1F23;padding-bottom:3px">${esc(t.title)}</div>` : ''}${t.paras.map(x => x.bullet ? `<div style="display:flex;gap:9px;padding:3px 0"><span style="color:${x.no ? '#9A9FA6' : '#2F8F5B'};font-weight:700;flex:none">${x.no ? '✗' : '✓'}</span><span>${esc(x.text)}</span></div>` : `<p style="margin:0 0 6px">${esc(x.text)}</p>`).join('')}</div>`).join('')}
     </div>
@@ -1507,18 +1507,18 @@ function renderProposal(job) {
       </div>
       <div style="flex:1;border:2px solid #1C1F23;border-radius:12px;padding:16px 18px">
         <div class="disp" style="font-weight:700;font-size:19px;line-height:1.15">${P.warrantyYears}-year workmanship warranty</div>
-        <div style="font-size:13.5px;margin-top:8px;line-height:1.5">If a defect comes from how it was installed — a panel settling over poorly compacted base, or a crack wider than ⅛″ outside a control joint — we repair or replace it at no charge.</div>
+        <div style="font-size:13.5px;margin-top:8px;line-height:1.5">Covers defects caused by improper installation, starting when the work is substantially complete.</div>
       </div>
     </div>
     <div style="font-size:12.5px;line-height:1.5;color:#3C4047">
       <div class="disp" style="font-weight:700;font-size:15px;color:#1C1F23;margin-bottom:3px">How the on-time guarantee works</div>
       <div><b>"Finished"</b> means the concrete is poured, finished, joints cut, forms removed and the site cleaned up. Curing time is not counted.</div>
       <div style="margin-top:4px"><b>The date moves day-for-day</b> only for things outside our control: rain, frozen ground or overnight lows forecast below 40°F; changes you ask for; permit, inspection or utility-locate delays; buried debris or soil problems found during digging; or the work area being blocked. We tell you in writing the same day if the date moves, and why.</div>
-      <div style="margin-top:4px">One payment per project, ${money(gAmt)} total. The warranty does not cover ordinary hairline or shrinkage cracks, color variation, soil movement not caused by our work, weathering, de-icing salts, not following the curing instructions, overweight vehicles, tree roots, or damage by others.</div>
+      <div style="margin-top:4px">One payment per project, ${money(gAmt)} total. The warranty does not cover ordinary hairline or shrinkage cracks, color variation, soil movement, weathering, de-icing chemicals, improper curing or use, or damage by others.</div>
     </div>
     <div style="border-top:2px solid #1C1F23;padding-top:12px;display:flex;flex-direction:column;gap:10px">
       <div class="disp" style="font-weight:700;font-size:19px">Accept this proposal</div>
-      <div style="display:flex;gap:18px;font-size:13.5px;flex-wrap:wrap">${T.map(t => `<span><span class="box" style="${sig && sig.tier === t.f.id ? 'background:#1C1F23;box-shadow:inset 0 0 0 2px #fff' : ''}"></span>${t.f.name} · ${money(t.total)}</span>`).join('')}</div>
+      <div style="display:flex;gap:18px;font-size:13.5px;flex-wrap:wrap">${(job.showTiers ? T : T.filter(t => t.f.id === fin.id)).map(t => `<span><span class="box" style="${sig && sig.tier === t.f.id ? 'background:#1C1F23;box-shadow:inset 0 0 0 2px #fff' : ''}"></span>${t.f.name} · ${money(t.total)}</span>`).join('')}</div>
       <div style="font-size:12.5px;color:#3C4047">${job.startDate ? `Signing books your start date of <b>${fmtDate(job.startDate)}</b> and guaranteed completion of <b>${doneTxt}</b>.` : 'Signing books your project; we confirm your start and finish dates with you in writing.'} Valid until ${fmtDate(valid)}.${P.freeCancel ? ' <b>Free cancellation:</b> cancel for any reason before work starts and your deposit is refunded in full.' : ''}</div>
       <div style="display:flex;gap:40px;margin-top:${sig ? 6 : 30}px;align-items:flex-end">
         <div style="flex:1">${sig ? `<img src="${sig.sig}" alt="Customer signature" style="height:64px;display:block">` : ''}<div style="border-top:1px solid #1C1F23;padding-top:5px;font-size:12.5px;color:#5B6068">${sig ? `<b style="color:#1C1F23">${esc(sig.name)}</b> · signed ${esc(sig.when)}` : 'Customer signature · date'}</div></div>
@@ -1540,6 +1540,8 @@ function renderProposal(job) {
     }
   });
   const upd = (k) => e => { job[k] = e.target.value; touch(job); renderProposal(job); };
+  $('#ptiers').onchange = e => { job.showTiers = e.target.checked; touch(job); renderProposal(job); };
+  $('#pbonus').onchange = e => { job.showBonuses = e.target.checked; touch(job); renderProposal(job); };
   $('#pprice').onchange = e => { job.price = Math.max(0, parseFloat(e.target.value) || 0); job.priceFin = job.finish || 'broom'; touch(job); refreshHeaderTotal(job); renderProposal(job); };
   $('#prefund').onchange = e => { job.refund = Math.max(0, parseFloat(e.target.value) || 0); touch(job); renderProposal(job); };
   if ($('#signnow')) $('#signnow').onclick = () => signModal(job);
@@ -1564,12 +1566,12 @@ function renderProposal(job) {
 }
 /* customer signs on the spot (phone or tablet): pick a finish, type name, sign with a finger */
 function signModal(job) {
-  const T = tiers(job), P = S(), cur = job.finish || 'broom';
+  const cur = job.finish || 'broom', T = tiers(job).filter(t => job.showTiers || t.f.id === cur), P = S();
   const bg = document.createElement('div'); bg.className = 'modal-bg';
   bg.innerHTML = `<div class="modal" role="dialog" aria-label="Sign proposal" style="width:min(640px,100%)">
     <h2 style="margin:0 0 4px">Accept your proposal</h2>
     <div class="small muted" style="margin-bottom:12px">${esc(projectTitle(job))} · ${esc(job.address || '')}</div>
-    <div class="small" style="font-weight:600;margin-bottom:6px">1. Choose your finish</div>
+    <div class="small" style="font-weight:600;margin-bottom:6px">${T.length > 1 ? '1. Choose your finish' : '1. Your price'}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:12px">${T.map(t => `<button type="button" class="chip" data-tier="${t.f.id}" aria-pressed="${t.f.id === cur}" style="height:auto;min-height:64px;border-radius:10px;margin:0;display:flex;flex-direction:column;align-items:flex-start;padding:8px 10px"><b>${t.f.name}</b><span class="small">${t.f.desc}</span><b>${money(t.total)}</b></button>`).join('')}</div>
     <label class="f" style="margin-bottom:10px">2. Your full name<input id="sgname" autocomplete="name" value="${esc(job.name && !/\d/.test(job.name) ? job.name : '')}" style="font-size:18px;height:48px"></label>
     <div class="small" style="font-weight:600;margin-bottom:6px">3. Sign with your finger</div>
